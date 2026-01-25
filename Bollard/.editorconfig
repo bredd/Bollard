@@ -1,0 +1,4 @@
+﻿[*.cs]
+
+# IL2050: Correctness of COM interop cannot be guaranteed after trimming. Interfaces and interface members might be removed.
+dotnet_diagnostic.IL2050.severity = silent

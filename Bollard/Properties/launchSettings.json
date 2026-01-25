@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Bollard": {
+      "commandName": "Project",
+      "workingDirectory": "C:\\Users\\brand\\Source\\bredd\\BollardBlogger\\Content"
+    }
+  }
+}
