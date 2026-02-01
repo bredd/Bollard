@@ -38,3 +38,4 @@ I will soon begin using GitHub Projects to manage the feature backlog. But for n
 1. Support C# codebehind the same way it works in ASP.NET.
 1. Add support for Razor components.
 1. Extend image processing to arbitrary images embedded in arbitrary pages; not just image collections that it now supports. This will likely be manifest as Razor components.
+1. Add built-in web server with file system monitoring and auto-rebuild for testing websites.
