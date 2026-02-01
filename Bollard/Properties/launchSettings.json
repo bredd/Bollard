@@ -2,7 +2,7 @@
   "profiles": {
     "Bollard": {
       "commandName": "Project",
-      "workingDirectory": "C:\\Users\\brand\\Source\\bredd\\BollardBlogger\\Content"
+      "workingDirectory": "C:\\Users\\brand\\Source\\bredd\\BollardSite\\Source"
     }
   }
 }
