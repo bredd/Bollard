@@ -21,6 +21,13 @@ While fully functional, Bollard is still in early development and, accordingly, 
 * No documentation.
 * Few samples.
 
+## Design
+
+Files with a `.cshtml` extension are processed by the Razor engine. By default, they result in `.html` files. However, the code embedded in a Razor page can change the output filename.
+
+## References
+* [Razor Pages Architecture an Concepts](https://learn.microsoft.com/en-us/aspnet/core/razor-pages/): Razor files in Bollard are modeled to (with few exceptions) work like Razor pages.
+
 ## History
 
 I ([bredd](https://github.com/bredd)) created an early version of Bollard to render [Brandt's Bollard Blog](https://bollard.brandtredd.org/). Just as Jekyll makes it easy to blog simply by writing an article in MarkDown, I wanted to do photo blogging by simply adding metadata to photos and uploading them to a folder. While I liked the simple and yet powerful nature of Jekyll, the lack of image processing capability made it unsuitable for the Bollard Blog project.
@@ -39,3 +46,6 @@ I will soon begin using GitHub Projects to manage the feature backlog. But for n
 1. Add support for Razor components.
 1. Extend image processing to arbitrary images embedded in arbitrary pages; not just image collections that it now supports. This will likely be manifest as Razor components.
 1. Add built-in web server with file system monitoring and auto-rebuild for testing websites.
+
+## Development and Architecture Notes
+* The Razor-using precedents on which Bollard is modeled are [Razor Pages](https://learn.microsoft.com/en-us/aspnet/core/razor-pages/) (standalone, the closest to Bollard) and Razor Views (follows an MVC pattern). While the razor files may be 100% compatible with these, the codebehind will be slightly different due to different `using` dependencies.
