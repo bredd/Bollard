@@ -27,7 +27,7 @@ foreach(var arg in args) {
             srcDir = fullPath;
         }
         else {
-            Console.WriteLine("File or path does not exist: {arg}");
+            Console.WriteLine($"File or path does not exist: {arg} ({fullPath})");
             writeSyntax = true;
         }
     }

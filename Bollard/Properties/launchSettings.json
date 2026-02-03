@@ -3,6 +3,10 @@
     "Bollard": {
       "commandName": "Project",
       "workingDirectory": "C:\\Users\\brand\\Source\\bredd\\BollardSite\\Source"
+    },
+    "basics-test": {
+      "commandName": "Project",
+      "commandLineArgs": "$(SolutionDir)/Tests/basics-test.cshtml"
     }
   }
 }
