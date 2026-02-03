@@ -49,3 +49,10 @@ I will soon begin using GitHub Projects to manage the feature backlog. But for n
 
 ## Development and Architecture Notes
 * The Razor-using precedents on which Bollard is modeled are [Razor Pages](https://learn.microsoft.com/en-us/aspnet/core/razor-pages/) (standalone, the closest to Bollard) and Razor Views (follows an MVC pattern). While the razor files may be 100% compatible with these, the codebehind will be slightly different due to different `using` dependencies.
+
+## Next Steps
+* Update the Razor engine wrapper to compile all of the razor files and associated codebehind files into one assembly. Concurrently queue up calls to the pages that should be built by default. This will create a framework whereby pages can call each other and for injecting Razor components.
+* Add default usings per the info in this chat: https://copilot.microsoft.com/chats/bG4J1tPWLkPYxF2Ddk7Kk
+* Test other basic Razor Page operations until most/all things in typical tutorials work.
+* (Optional) add a feature that can output the intermediary c# code before it is compiled into an assembly.
+
