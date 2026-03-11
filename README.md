@@ -51,8 +51,13 @@ I will soon begin using GitHub Projects to manage the feature backlog. But for n
 * The Razor-using precedents on which Bollard is modeled are [Razor Pages](https://learn.microsoft.com/en-us/aspnet/core/razor-pages/) (standalone, the closest to Bollard) and Razor Views (follows an MVC pattern). While the razor files may be 100% compatible with these, the codebehind will be slightly different due to different `using` dependencies.
 
 ## Next Steps
+* Get the config file the way I want it - possibly as a bare c# file. 
 * Update the Razor engine wrapper to compile all of the razor files and associated codebehind files into one assembly. Concurrently queue up calls to the pages that should be built by default. This will create a framework whereby pages can call each other and for injecting Razor components.
+    * In the process, add an option to output the generated csharp code for debugging purposes.
 * Add default usings per the info in this chat: https://copilot.microsoft.com/chats/bG4J1tPWLkPYxF2Ddk7Kk
+* Update the base class for the template and base class for the model to match those used in razor pages as closely as reasonable.
 * Test other basic Razor Page operations until most/all things in typical tutorials work.
-* (Optional) add a feature that can output the intermediary c# code before it is compiled into an assembly.
 
+## Implementation Notes
+* Created the RazorSample project to use as an example of how Razor Pages are used conventionally as a model of how Bollard should work.
+* Since I am using RazorPages as the sample, any codebehind should use a model class, not a partial class of the actual page. Therefore the base class must have a Model property, etc.
