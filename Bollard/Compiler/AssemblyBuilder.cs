@@ -19,9 +19,11 @@ using System.Security.Cryptography.X509Certificates;
 namespace Bollard.Compiler;
 internal class AssemblyBuilder {
 
+    // This will generate a hidden diagnostic of "unnecessary using directive" if nothing in the application references one of these namespaces.
+    // Since the diagnostic is hidden, we leave it alone.
     const string c_globalSource = @"global using System; global using System.IO; global using System.Collections.Generic;";
 
-    static readonly DiagnosticDescriptor c_diagAssemblyNotFound = new DiagnosticDescriptor("BB1001", "Assembly not found (check for .dll extension)", "name = '{0}'", "Razor", DiagnosticSeverity.Error, true);
+    static readonly DiagnosticDescriptor c_diagAssemblyNotFound = new DiagnosticDescriptor("BB1001", "Assembly not found", "Assembly '{0}' not found.{1}", "Razor", DiagnosticSeverity.Error, true);
 
     static readonly Regex c_rxReferenceDirective = new Regex(@"^#ref\s+""([^""]+)""\s*$", RegexOptions.CultureInvariant);
 
@@ -39,6 +41,7 @@ internal class AssemblyBuilder {
 
     static string[] s_assemblySearchPath;
 
+    string _sourceDir = string.Empty; // For shortening the path on diagnostic locations.
     List<Diagnostic> _localDiagnostics = new List<Diagnostic>();
     List<SyntaxTree> _trees = new List<SyntaxTree>();
     List<MetadataReference> _refs = new List<MetadataReference>();
@@ -49,6 +52,16 @@ internal class AssemblyBuilder {
         var primaryPath = GetReferenceAssemblyDirectory();
         var secondaryPath = AppContext.BaseDirectory; // Never null
         s_assemblySearchPath = primaryPath is not null ? [primaryPath, secondaryPath] : [secondaryPath];
+    }
+
+    public string SourceDir {
+        get => _sourceDir;
+        set {
+            _sourceDir = Path.GetFullPath(value);
+            if (_sourceDir[_sourceDir.Length-1] != Path.DirectorySeparatorChar) {
+                _sourceDir += Path.DirectorySeparatorChar;
+            }
+        }
     }
 
     public AssemblyBuilder() {
@@ -66,7 +79,7 @@ internal class AssemblyBuilder {
         using (var stream = File.OpenRead(sourceFileName)) {
             text = SourceText.From(stream);
         }
-        _trees.Add(CSharpSyntaxTree.ParseText(text, c_parseOptions, sourceFileName));
+        _trees.Add(CSharpSyntaxTree.ParseText(text, c_parseOptions, GetDiagnosticPath(sourceFileName)));
     }
 
     private void ProcessCustomizations() {
@@ -85,12 +98,14 @@ internal class AssemblyBuilder {
                 if (!match.Success)
                     continue;
 
-                AddReference(match.Groups[1].Value);
+                AddReference(match.Groups[1].Value, trivia.GetLocation());
                 replaceTrivia.Add(trivia);
             }
 
-            var cleaned = root.ReplaceTrivia(replaceTrivia, (t0, t1) => SyntaxFactory.Whitespace(string.Empty));
-            _trees[i] = CSharpSyntaxTree.Create((CompilationUnitSyntax)cleaned);
+            if (replaceTrivia.Count > 0) {
+                var cleaned = root.ReplaceTrivia(replaceTrivia, (t0, t1) => SyntaxFactory.Whitespace(string.Empty));
+                _trees[i] = CSharpSyntaxTree.Create((CompilationUnitSyntax)cleaned, c_parseOptions, tree.FilePath);
+            }
         }
     }
 
@@ -120,6 +135,14 @@ internal class AssemblyBuilder {
         return Assembly.Load(ms.ToArray());
     }
 
+    private string GetDiagnosticPath(string path) {
+        path = Path.GetFullPath(path);
+        if (path.StartsWith(_sourceDir)) {
+            return path.Substring(_sourceDir.Length);
+        }
+        return path;
+    }
+
 #if false
     /// <summary>
     /// Add a reference from a type. Translates from the runtime path (in type.Assembly.Location) to the reference path.
@@ -138,10 +161,12 @@ internal class AssemblyBuilder {
         }
     }
 #endif
+
     private bool AddReference(string assemblyName, Location? location = null) {
         var fullPath = FindAssembly(assemblyName);
         if (fullPath is null) {
-            _localDiagnostics.Add(Diagnostic.Create(c_diagAssemblyNotFound, location, assemblyName));
+            var hint = assemblyName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? string.Empty : " (Usually it should have a .dll extension.)";
+            _localDiagnostics.Add(Diagnostic.Create(c_diagAssemblyNotFound, location, assemblyName, hint));
             return false;
         }
         var abyName = AssemblyName.GetAssemblyName(fullPath);

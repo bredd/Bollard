@@ -8,6 +8,7 @@ const string c_configFilename = "_bollard_config.json";
 
 Console.WriteLine("Testing...");
 var builder = new AssemblyBuilder();
+builder.SourceDir = @"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture";
 builder.ParseCSharp(@"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\Config.cs");
 var a = builder.GetAssembly();
 a.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
