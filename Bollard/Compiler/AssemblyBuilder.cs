@@ -13,38 +13,49 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.ComponentModel.DataAnnotations;
+using System.Collections.Immutable;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Bollard.Compiler;
 internal class AssemblyBuilder {
 
     const string c_globalSource = @"global using System; global using System.IO; global using System.Collections.Generic;";
 
+    static readonly DiagnosticDescriptor c_diagAssemblyNotFound = new DiagnosticDescriptor("BB1001", "Assembly not found (check for .dll extension)", "name = '{0}'", "Razor", DiagnosticSeverity.Error, true);
+
     static readonly Regex c_rxReferenceDirective = new Regex(@"^#ref\s+""([^""]+)""\s*$", RegexOptions.CultureInvariant);
 
     static readonly CSharpParseOptions c_parseOptions = new CSharpParseOptions(LanguageVersion.CSharp12); // Same version as the project in 2026. May advance this in the future.
     static readonly CSharpCompilationOptions c_compOptions = new CSharpCompilationOptions(OutputKind.ConsoleApplication, reportSuppressedDiagnostics: false, optimizationLevel: OptimizationLevel.Release);
 
+    static string[] c_defaultRefs = [
+        "System.Runtime.dll",
+        "System.Console.dll",
+        "System.Collections.dll",
+        "System.Linq.dll",
+        "System.Linq.Expressions.dll", // Includes System.Dynamic.DynamicObject
+        "System.Web.HttpUtility.dll" // Includes System.Web.HttpUtility
+    ];
 
-    static readonly MetadataReference[] c_refs = new MetadataReference[] {
-        MetadataReference.CreateFromFile(Assembly.Load(new AssemblyName("netstandard")).Location),
-        MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(List<>).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(Uri).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(DynamicObject).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(HttpUtility).Assembly.Location),
+    static string[] s_assemblySearchPath;
 
-
-        MetadataReference.CreateFromFile(Assembly.Load(new AssemblyName("System.Runtime")).Location),
-        MetadataReference.CreateFromFile(Assembly.Load(new AssemblyName("System.Collections")).Location),
-
-        /* Likely will need more. See RazorBit.cs. */
-    };   
-
+    List<Diagnostic> _localDiagnostics = new List<Diagnostic>();
     List<SyntaxTree> _trees = new List<SyntaxTree>();
+    List<MetadataReference> _refs = new List<MetadataReference>();
+    HashSet<string> _refSeen = new HashSet<string>();
+
+    static AssemblyBuilder() {
+        // Compose assembly search path
+        var primaryPath = GetReferenceAssemblyDirectory();
+        var secondaryPath = AppContext.BaseDirectory; // Never null
+        s_assemblySearchPath = primaryPath is not null ? [primaryPath, secondaryPath] : [secondaryPath];
+    }
 
     public AssemblyBuilder() {
+        // Add the core library and the default references
+        foreach(var name in c_defaultRefs) {
+            AddReference(name);
+        }
 
         // Load the global Usings
         _trees.Add(CSharpSyntaxTree.ParseText(c_globalSource, c_parseOptions, "_globals.cs"));
@@ -74,7 +85,7 @@ internal class AssemblyBuilder {
                 if (!match.Success)
                     continue;
 
-                Console.WriteLine(match.Groups[1].Value);
+                AddReference(match.Groups[1].Value);
                 replaceTrivia.Add(trivia);
             }
 
@@ -87,23 +98,105 @@ internal class AssemblyBuilder {
 
         ProcessCustomizations();
 
-        var metadataReferences = new List<MetadataReference>(c_refs);
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-            metadataReferences.Add(MetadataReference.CreateFromFile(Assembly.Load(new AssemblyName("netstandard")).Location));
-        }
-
-
-        var compilation = CSharpCompilation.Create("BollardAssembly", _trees, metadataReferences, c_compOptions);
+        var compilation = CSharpCompilation.Create("BollardAssembly", _trees, _refs, c_compOptions);
 
         using var ms = new MemoryStream();
         var result = compilation.Emit(ms);
-        if (!result.Success) {
-            foreach (var diagnostic in result.Diagnostics) {
-                Console.WriteLine(diagnostic.ToString());
-            }
-            throw new ApplicationException("Failed to compile.");
+
+        // TODO: Improve error handling.
+        // This should work more like Compilation.Emit in that it process things and indicates diagnostics.
+        // Most likely there is a build method that indicates counts of warnings and errors.
+        // The caller can get the diagnostics (merger of those from the compiler and thos I added)
+        // and then it can proceed.
+
+        // Merge all diagnostics with mine first.
+        var allDiagnostics = ImmutableArray<Diagnostic>.Empty.AddRange(_localDiagnostics).AddRange(result.Diagnostics);
+        foreach (var diagnostic in allDiagnostics) {
+            Console.WriteLine(diagnostic.ToString());
         }
+        if (!result.Success)
+            throw new ApplicationException("Failed to compile.");
         ms.Position = 0;
         return Assembly.Load(ms.ToArray());
     }
+
+#if false
+    /// <summary>
+    /// Add a reference from a type. Translates from the runtime path (in type.Assembly.Location) to the reference path.
+    /// </summary>
+    /// <param name="type">Type to be referenced</param>
+    /// <remarks>
+    /// Due to deduplication in AddReference using multiple types from the same assembly doesn't cost much.
+    /// </remarks>
+    private void AddReference(Type type) {
+        // Translates from runtime path to reference path
+        if (!AddReference(Path.GetFileName(type.Assembly.Location))) {
+            Console.WriteLine($"Not mapped: {type.FullName} -> {type.Assembly.Location}");
+        }
+        else {
+            Console.WriteLine($"Mapped: {type.FullName} -> {Path.GetFileName(type.Assembly.Location)}");
+        }
+    }
+#endif
+    private bool AddReference(string assemblyName, Location? location = null) {
+        var fullPath = FindAssembly(assemblyName);
+        if (fullPath is null) {
+            _localDiagnostics.Add(Diagnostic.Create(c_diagAssemblyNotFound, location, assemblyName));
+            return false;
+        }
+        var abyName = AssemblyName.GetAssemblyName(fullPath);
+        if (_refSeen.Add(abyName.FullName)) {
+            _refs.Add(MetadataReference.CreateFromFile(fullPath));
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Getting the path to the reference assembly directory is surprisingly complicated.
+    /// That's because the path you get easily is to the runtime assemblies which may be stripped.
+    /// It's also because the reference assemblies only have two parts to their version numbers.
+    /// </summary>
+    /// <returns>The reference assembly path or null.</returns>
+    /// <remarks>
+    /// Null may be returned if the application is packaged as single-file or NativeAOT.
+    /// The contents may be enumerated to get a list of all possible assemblies.
+    /// </remarks>
+    private static string? GetReferenceAssemblyDirectory() {
+        string? deps = (string?)AppContext.GetData("FX_DEPS_FILE");
+        if (deps is null) return null;
+
+        // Extract the runtime version (e.g., 8.0.2)
+        var runtimeDir = Path.GetDirectoryName(deps)!;
+        var version = Path.GetFileName(runtimeDir)!;
+        var versionParts = version.Split('.');
+
+        // Go all the way to the dotNetRoot (typical runtimeDir is C:\Program Files\dotnet\shared\MicrosoftNETCore.App\8.0.25)
+        var dotnetRoot = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(runtimeDir)));
+        if (dotnetRoot is null) return null;
+
+        // Assemble the new dir. Typical is C:\Program Files\dotnet\Microsoft.NETCore.App.Ref\8.0.25\ref\net8.0
+        var assemblyDir = Path.Combine(dotnetRoot, "packs", "Microsoft.NETCore.App.Ref", version, "ref", $"net{versionParts[0]}.{versionParts[1]}");
+
+        return Path.Exists(assemblyDir) ? assemblyDir : null;
+    }
+
+    private static string? FindAssembly(string assemblyName) {
+        // If the assembly has a full path then try that first
+        if (Path.GetDirectoryName(assemblyName) is not null) {
+            if (File.Exists(assemblyName)) {
+                return Path.GetFullPath(assemblyName);
+            }
+            assemblyName = Path.GetFileName(assemblyName);
+        }
+
+        // Try each path in the list
+        foreach(var directory in s_assemblySearchPath) {
+            var fullPath = Path.Combine(directory, assemblyName);
+            if (File.Exists(fullPath))
+                return fullPath;
+        }
+
+        return null;
+    }
+
 }

@@ -46,9 +46,17 @@ I will soon begin using GitHub Projects to manage the feature backlog. But for n
 1. Add support for Razor components.
 1. Extend image processing to arbitrary images embedded in arbitrary pages; not just image collections that it now supports. This will likely be manifest as Razor components.
 1. Add built-in web server with file system monitoring and auto-rebuild for testing websites.
+1. Warn about unused code and classes (Ask CoPilot "Can Roslyn warn when code is unreferenced?" and "Can Roslyn warn about unused classes?")
 
 ## Development and Architecture Notes
 * The Razor-using precedents on which Bollard is modeled are [Razor Pages](https://learn.microsoft.com/en-us/aspnet/core/razor-pages/) (standalone, the closest to Bollard) and Razor Views (follows an MVC pattern). While the razor files may be 100% compatible with these, the codebehind will be slightly different due to different `using` dependencies.
+
+
+## Finishing Steps
+* Get filenames written with errors and warnings
+* Determine what to do about global usings. It writes them as redundant in one place but doesn't work without them elsewhere.
+* Fix up error reporting.
+* Compile all .cs and all .cshtml files in the directory tree
 
 ## Next Steps
 * Get the config file the way I want it - possibly as a bare c# file. 
@@ -61,3 +69,6 @@ I will soon begin using GitHub Projects to manage the feature backlog. But for n
 ## Implementation Notes
 * Created the RazorSample project to use as an example of how Razor Pages are used conventionally as a model of how Bollard should work.
 * Since I am using RazorPages as the sample, any codebehind should use a model class, not a partial class of the actual page. Therefore the base class must have a Model property, etc.
+* In order to compile custom Razor files that may reference .NET Core standard libraries, those assemblies must be available to the tool. Therefore, even if I compile it as NativeAOT or as a file-based app, the .NET assemblies still must be packaged with it.
+    * However, if I am targeting the GitHub Ubuntu runners for automated builds, they have the .NET SDK and runtimes pre-installed.
+    * Or, I can package it as a Linux container for easy use in many configurations. GitHub Actions support containers.
