@@ -1,9 +1,19 @@
 ﻿using System.IO.Enumeration;
 using System.Text.Json.Nodes;
+using Bollard.Compiler;
 using BollardBlogger;
 
 const string c_syntax = @"Syntax: BollardBlogger [sourcePath]";
 const string c_configFilename = "_bollard_config.json";
+
+Console.WriteLine("Testing...");
+var builder = new AssemblyBuilder();
+builder.ParseCSharp(@"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\Config.cs");
+var a = builder.GetAssembly();
+a.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
+
+return 0;
+
 
 // Parse the command line
 string? srcDir = null;

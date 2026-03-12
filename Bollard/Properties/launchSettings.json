@@ -7,6 +7,10 @@
     "basics-test": {
       "commandName": "Project",
       "commandLineArgs": "$(SolutionDir)/Tests/basics-test.cshtml"
+    },
+    "NewArchitecture": {
+      "commandName": "Project",
+      "commandLineArgs": "$(SolutionDir)/Tests/NewArchitecture"
     }
   }
 }
