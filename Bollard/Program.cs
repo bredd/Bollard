@@ -10,9 +10,11 @@ Console.WriteLine("Testing...");
 var builder = new AssemblyBuilder();
 builder.SourceDir = @"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture";
 builder.ParseCSharp(@"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\Config.cs");
-var a = builder.GetAssembly();
-a.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
-
+builder.BuildAssembly();
+builder.ReportDiagnostics(minSeverity: Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden);
+if (builder.SuccessLevel < Microsoft.CodeAnalysis.DiagnosticSeverity.Error) {
+    builder.Assembly!.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
+}
 return 0;
 
 

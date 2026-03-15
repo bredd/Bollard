@@ -15,6 +15,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Immutable;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.CodeAnalysis.Emit;
 
 namespace Bollard.Compiler;
 internal class AssemblyBuilder {
@@ -46,6 +47,9 @@ internal class AssemblyBuilder {
     List<SyntaxTree> _trees = new List<SyntaxTree>();
     List<MetadataReference> _refs = new List<MetadataReference>();
     HashSet<string> _refSeen = new HashSet<string>();
+    Assembly? _assembly;
+    ImmutableArray<Diagnostic> _diagnostics = ImmutableArray<Diagnostic>.Empty;
+    DiagnosticSeverity _successLevel = DiagnosticSeverity.Hidden;
 
     static AssemblyBuilder() {
         // Compose assembly search path
@@ -109,30 +113,31 @@ internal class AssemblyBuilder {
         }
     }
 
-    public Assembly? GetAssembly() {
-
+    public DiagnosticSeverity BuildAssembly() {
         ProcessCustomizations();
-
         var compilation = CSharpCompilation.Create("BollardAssembly", _trees, _refs, c_compOptions);
-
         using var ms = new MemoryStream();
         var result = compilation.Emit(ms);
-
-        // TODO: Improve error handling.
-        // This should work more like Compilation.Emit in that it process things and indicates diagnostics.
-        // Most likely there is a build method that indicates counts of warnings and errors.
-        // The caller can get the diagnostics (merger of those from the compiler and thos I added)
-        // and then it can proceed.
-
-        // Merge all diagnostics with mine first.
-        var allDiagnostics = ImmutableArray<Diagnostic>.Empty.AddRange(_localDiagnostics).AddRange(result.Diagnostics);
-        foreach (var diagnostic in allDiagnostics) {
-            Console.WriteLine(diagnostic.ToString());
+        if (result.Success) {
+            _assembly = Assembly.Load(ms.ToArray());
         }
-        if (!result.Success)
-            throw new ApplicationException("Failed to compile.");
-        ms.Position = 0;
-        return Assembly.Load(ms.ToArray());
+        _diagnostics = ImmutableArray<Diagnostic>.Empty.AddRange(result.Diagnostics).AddRange(_localDiagnostics);
+        _successLevel = _diagnostics.MaxBy(d => d.Severity)?.Severity ?? DiagnosticSeverity.Hidden;
+        return _successLevel;
+    }
+
+    public DiagnosticSeverity SuccessLevel => _successLevel;
+    public ImmutableArray<Diagnostic> Diagnostics => _diagnostics;
+    public Assembly? Assembly => _assembly;
+
+    public DiagnosticSeverity ReportDiagnostics(TextWriter? writer = null, DiagnosticSeverity minSeverity = DiagnosticSeverity.Warning) {
+        if (writer is null) writer = Console.Out;
+        foreach (var diagnostic in _diagnostics) {
+            if (diagnostic.Severity >= minSeverity) {
+                writer.WriteLine(diagnostic.ToString());
+            }
+        }
+        return _successLevel;
     }
 
     private string GetDiagnosticPath(string path) {
