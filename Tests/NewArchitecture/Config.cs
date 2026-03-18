@@ -5,9 +5,17 @@
 #ref "System.Diagnostics.TraceSource.dll"
 using System.Diagnostics;
 
+// Required for TestTarget
+#ref "C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\_lib\TestTargetLibrary.dll"
+using TestTargetLibrary;
+
+Console.WriteLine();
 Console.WriteLine("Config.cs");
 Console.WriteLine(Directory.GetCurrentDirectory());
 Trace.WriteLine("Sample trace message.");
+Console.WriteLine($"Can you {(TestTarget.AllCaps("Shout"))}?");
+Console.WriteLine("Config.cs test succeeded.");
+Console.WriteLine();
 return 0; // Exit the launch function
 
 // Generate some warnings

@@ -17,7 +17,8 @@ using System.Collections.Immutable;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.CodeAnalysis.Emit;
 
-namespace Bollard.Compiler;
+namespace Bollard;
+
 internal class AssemblyBuilder {
 
     // This will generate a hidden diagnostic of "unnecessary using directive" if nothing in the application references one of these namespaces.
@@ -31,6 +32,8 @@ internal class AssemblyBuilder {
     static readonly CSharpParseOptions c_parseOptions = new CSharpParseOptions(LanguageVersion.CSharp12); // Same version as the project in 2026. May advance this in the future.
     static readonly CSharpCompilationOptions c_compOptions = new CSharpCompilationOptions(OutputKind.ConsoleApplication, reportSuppressedDiagnostics: false, optimizationLevel: OptimizationLevel.Release);
 
+    static readonly char[] c_slashes = { '/', '\\' };
+
     static string[] c_defaultRefs = [
         "System.Runtime.dll",
         "System.Console.dll",
@@ -40,23 +43,18 @@ internal class AssemblyBuilder {
         "System.Web.HttpUtility.dll" // Includes System.Web.HttpUtility
     ];
 
-    static string[] s_assemblySearchPath;
+    static readonly string? c_referenceAssemblyDirectory = GetReferenceAssemblyDirectory();
+    static readonly string c_localAssemblyDirectory = AppContext.BaseDirectory;
 
     string _sourceDir = string.Empty; // For shortening the path on diagnostic locations.
     List<Diagnostic> _localDiagnostics = new List<Diagnostic>();
     List<SyntaxTree> _trees = new List<SyntaxTree>();
-    List<MetadataReference> _refs = new List<MetadataReference>();
-    HashSet<string> _refSeen = new HashSet<string>();
-    Assembly? _assembly;
+    List<MetadataReference> _assemblyRefs = new List<MetadataReference>();
+    HashSet<string> _assemblyRefSeen = new HashSet<string>();
+    Dictionary<string, string> assemblyRefMap = new Dictionary<string, string>();
     ImmutableArray<Diagnostic> _diagnostics = ImmutableArray<Diagnostic>.Empty;
     DiagnosticSeverity _successLevel = DiagnosticSeverity.Hidden;
-
-    static AssemblyBuilder() {
-        // Compose assembly search path
-        var primaryPath = GetReferenceAssemblyDirectory();
-        var secondaryPath = AppContext.BaseDirectory; // Never null
-        s_assemblySearchPath = primaryPath is not null ? [primaryPath, secondaryPath] : [secondaryPath];
-    }
+    Assembly? _assembly;
 
     public string SourceDir {
         get => _sourceDir;
@@ -71,7 +69,7 @@ internal class AssemblyBuilder {
     public AssemblyBuilder() {
         // Add the core library and the default references
         foreach(var name in c_defaultRefs) {
-            AddReference(name);
+            AddAssemblyReference(name);
         }
 
         // Load the global Usings
@@ -102,7 +100,9 @@ internal class AssemblyBuilder {
                 if (!match.Success)
                     continue;
 
-                AddReference(match.Groups[1].Value, trivia.GetLocation());
+                var location = trivia.GetLocation();
+                var sourcePath = Path.Combine(_sourceDir, location.SourceTree?.FilePath ?? string.Empty);
+                AddAssemblyReference(match.Groups[1].Value, sourcePath, trivia.GetLocation());
                 replaceTrivia.Add(trivia);
             }
 
@@ -115,7 +115,7 @@ internal class AssemblyBuilder {
 
     public DiagnosticSeverity BuildAssembly() {
         ProcessCustomizations();
-        var compilation = CSharpCompilation.Create("BollardAssembly", _trees, _refs, c_compOptions);
+        var compilation = CSharpCompilation.Create("BollardAssembly", _trees, _assemblyRefs, c_compOptions);
         using var ms = new MemoryStream();
         var result = compilation.Emit(ms);
         if (result.Success) {
@@ -167,16 +167,50 @@ internal class AssemblyBuilder {
     }
 #endif
 
-    private bool AddReference(string assemblyName, Location? location = null) {
-        var fullPath = FindAssembly(assemblyName);
-        if (fullPath is null) {
+    private bool AddAssemblyReference(string assemblyName, string? referencingPath = null, Location? location = null) {
+        string? assemblyPath = null;
+        bool isReferenceAssembly = false;
+
+        // If a path to the assembly is given, it must be located as specified relative to the referencing file
+        if (assemblyName.IndexOfAny(c_slashes) >= 0) {
+            if (referencingPath is null) {
+                throw new InvalidOperationException("Internal error: referencingPath should be specified when an assembly with a path is referenced.");
+            }
+            assemblyPath = Path.Combine(Path.GetFileName(referencingPath), assemblyName);
+        }
+
+        // Try the reference assembly directory
+        if (assemblyPath is null && c_referenceAssemblyDirectory is not null) {
+            assemblyPath = Path.Combine(c_referenceAssemblyDirectory, assemblyName);
+            if (File.Exists(assemblyPath)) {
+                isReferenceAssembly = true;
+            }
+            else {
+                assemblyPath = null;
+            }
+        }
+
+        // Try the local assembly directory (where the base executable is located)
+        if (assemblyPath is null) {
+            assemblyPath = Path.Combine(c_localAssemblyDirectory, assemblyName);
+            if (!File.Exists(assemblyPath)) {
+                assemblyPath = null;
+            }
+        }
+
+        // Report if not found
+        if (assemblyPath is null) {
             var hint = assemblyName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? string.Empty : " (Usually it should have a .dll extension.)";
             _localDiagnostics.Add(Diagnostic.Create(c_diagAssemblyNotFound, location, assemblyName, hint));
             return false;
         }
-        var abyName = AssemblyName.GetAssemblyName(fullPath);
-        if (_refSeen.Add(abyName.FullName)) {
-            _refs.Add(MetadataReference.CreateFromFile(fullPath));
+
+        var abyName = AssemblyName.GetAssemblyName(assemblyPath);
+        if (_assemblyRefSeen.Add(abyName.FullName)) {
+            _assemblyRefs.Add(MetadataReference.CreateFromFile(assemblyPath));
+            if (!isReferenceAssembly) {
+                assemblyRefMap[abyName.FullName] = assemblyPath;
+            }
         }
         return true;
     }
@@ -208,25 +242,6 @@ internal class AssemblyBuilder {
         var assemblyDir = Path.Combine(dotnetRoot, "packs", "Microsoft.NETCore.App.Ref", version, "ref", $"net{versionParts[0]}.{versionParts[1]}");
 
         return Path.Exists(assemblyDir) ? assemblyDir : null;
-    }
-
-    private static string? FindAssembly(string assemblyName) {
-        // If the assembly has a full path then try that first
-        if (Path.GetDirectoryName(assemblyName) is not null) {
-            if (File.Exists(assemblyName)) {
-                return Path.GetFullPath(assemblyName);
-            }
-            assemblyName = Path.GetFileName(assemblyName);
-        }
-
-        // Try each path in the list
-        foreach(var directory in s_assemblySearchPath) {
-            var fullPath = Path.Combine(directory, assemblyName);
-            if (File.Exists(fullPath))
-                return fullPath;
-        }
-
-        return null;
     }
 
 }

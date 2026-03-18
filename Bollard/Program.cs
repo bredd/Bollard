@@ -1,6 +1,6 @@
 ﻿using System.IO.Enumeration;
 using System.Text.Json.Nodes;
-using Bollard.Compiler;
+using Bollard;
 using BollardBlogger;
 
 const string c_syntax = @"Syntax: BollardBlogger [sourcePath]";
