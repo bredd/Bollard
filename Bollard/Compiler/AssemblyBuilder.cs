@@ -51,7 +51,7 @@ internal class AssemblyBuilder {
     List<SyntaxTree> _trees = new List<SyntaxTree>();
     List<MetadataReference> _assemblyRefs = new List<MetadataReference>();
     HashSet<string> _assemblyRefSeen = new HashSet<string>();
-    Dictionary<string, string> assemblyRefMap = new Dictionary<string, string>();
+    Dictionary<string, string> _assemblyRefMap = new Dictionary<string, string>();
     ImmutableArray<Diagnostic> _diagnostics = ImmutableArray<Diagnostic>.Empty;
     DiagnosticSeverity _successLevel = DiagnosticSeverity.Hidden;
     Assembly? _assembly;
@@ -119,7 +119,9 @@ internal class AssemblyBuilder {
         using var ms = new MemoryStream();
         var result = compilation.Emit(ms);
         if (result.Success) {
-            _assembly = Assembly.Load(ms.ToArray());
+            ms.Position = 0;
+            var loadContext = new LoadContext(_assemblyRefMap);
+            _assembly = loadContext.LoadFromStream(ms);
         }
         _diagnostics = ImmutableArray<Diagnostic>.Empty.AddRange(result.Diagnostics).AddRange(_localDiagnostics);
         _successLevel = _diagnostics.MaxBy(d => d.Severity)?.Severity ?? DiagnosticSeverity.Hidden;
@@ -209,7 +211,7 @@ internal class AssemblyBuilder {
         if (_assemblyRefSeen.Add(abyName.FullName)) {
             _assemblyRefs.Add(MetadataReference.CreateFromFile(assemblyPath));
             if (!isReferenceAssembly) {
-                assemblyRefMap[abyName.FullName] = assemblyPath;
+                _assemblyRefMap[abyName.FullName] = assemblyPath;
             }
         }
         return true;
@@ -242,6 +244,22 @@ internal class AssemblyBuilder {
         var assemblyDir = Path.Combine(dotnetRoot, "packs", "Microsoft.NETCore.App.Ref", version, "ref", $"net{versionParts[0]}.{versionParts[1]}");
 
         return Path.Exists(assemblyDir) ? assemblyDir : null;
+    }
+
+    class LoadContext: System.Runtime.Loader.AssemblyLoadContext {
+        Dictionary<string, string> _assemblyRefMap;
+
+        public LoadContext(Dictionary<string, string> assemblyRefMap) {
+            _assemblyRefMap = assemblyRefMap;
+        }
+
+        protected override Assembly? Load(AssemblyName assemblyName) {
+            Console.WriteLine("Attempting to load: " + assemblyName);
+            if (_assemblyRefMap.TryGetValue(assemblyName.FullName, out var path)) {
+                return LoadFromAssemblyPath(path);
+            }
+            return base.Load(assemblyName);
+        }
     }
 
 }
