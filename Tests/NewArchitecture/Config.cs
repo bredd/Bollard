@@ -13,6 +13,7 @@ Console.WriteLine();
 Console.WriteLine("Config.cs");
 Console.WriteLine(Directory.GetCurrentDirectory());
 Trace.WriteLine("Sample trace message.");
+Console.WriteLine($"Greeting = {greeting}");
 Console.WriteLine($"Can you {(TestTarget.AllCaps("Shout"))}?");
 Console.WriteLine("Config.cs test succeeded.");
 Console.WriteLine();

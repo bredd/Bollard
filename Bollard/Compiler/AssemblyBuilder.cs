@@ -21,10 +21,6 @@ namespace Bollard;
 
 internal class AssemblyBuilder {
 
-    // This will generate a hidden diagnostic of "unnecessary using directive" if nothing in the application references one of these namespaces.
-    // Since the diagnostic is hidden, we leave it alone.
-    const string c_globalSource = @"global using System; global using System.IO; global using System.Collections.Generic;";
-
     static readonly DiagnosticDescriptor c_diagAssemblyNotFound = new DiagnosticDescriptor("BB1001", "Assembly not found", "Assembly '{0}' not found.{1}", "Razor", DiagnosticSeverity.Error, true);
 
     static readonly Regex c_rxReferenceDirective = new Regex(@"^#ref\s+""([^""]+)""\s*$", RegexOptions.CultureInvariant);
@@ -71,9 +67,11 @@ internal class AssemblyBuilder {
         foreach(var name in c_defaultRefs) {
             AddAssemblyReference(name);
         }
+    }
 
-        // Load the global Usings
-        _trees.Add(CSharpSyntaxTree.ParseText(c_globalSource, c_parseOptions, "_globals.cs"));
+    public void ParseCSharp(Stream stream, string name) {
+        var text = SourceText.From(stream);
+        _trees.Add(CSharpSyntaxTree.ParseText(text, c_parseOptions, name));
     }
 
     public void ParseCSharp(string sourceFileName) {
@@ -83,6 +81,12 @@ internal class AssemblyBuilder {
         }
         _trees.Add(CSharpSyntaxTree.ParseText(text, c_parseOptions, GetDiagnosticPath(sourceFileName)));
     }
+
+    /*
+    public void ParseCSharpFromString(string text, string sourceName) {
+        _trees.Add(CSharpSyntaxTree.ParseText(text, c_parseOptions, sourceName));
+    }
+    */
 
     private void ProcessCustomizations() {
 

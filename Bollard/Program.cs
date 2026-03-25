@@ -2,13 +2,24 @@
 using System.Text.Json.Nodes;
 using Bollard;
 using BollardBlogger;
+using System.Reflection;
 
+const string c_SiteProgramResource = "Bollard.Resources.SiteProgram.cs";
 const string c_syntax = @"Syntax: BollardBlogger [sourcePath]";
 const string c_configFilename = "_bollard_config.json";
 
 Console.WriteLine("Testing...");
 var builder = new AssemblyBuilder();
 builder.SourceDir = @"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture";
+
+// Add the common code
+{
+    using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(c_SiteProgramResource);
+    if (stream is null)
+        throw new InvalidOperationException($"Resource '{c_SiteProgramResource}' not found in assembly.");
+    builder.ParseCSharp(stream, c_SiteProgramResource);
+}
+
 builder.ParseCSharp(@"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\Config.cs");
 builder.BuildAssembly();
 builder.ReportDiagnostics(minSeverity: Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden);
