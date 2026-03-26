@@ -1,0 +1,12 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Bollard;
+public static class Project {
+    public static ISite GetDefaultSite() {
+        return new TestSite();
+    }
+}

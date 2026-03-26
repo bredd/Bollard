@@ -205,34 +205,40 @@ internal class AssemblyBuilder {
     }
 #endif
 
-    private bool AddAssemblyReference(string assemblyName, string? referencingPath = null, Location? location = null) {
+    public bool AddAssemblyReference(string assemblyName, string? referencingPath = null, Location? location = null) {
         string? assemblyPath = null;
         bool isReferenceAssembly = false;
 
-        // If a path to the assembly is given, it must be located as specified relative to the referencing file
-        if (assemblyName.IndexOfAny(c_slashes) >= 0) {
-            if (referencingPath is null) {
-                throw new InvalidOperationException("Internal error: referencingPath should be specified when an assembly with a path is referenced.");
-            }
-            assemblyPath = Path.Combine(Path.GetFileName(referencingPath), assemblyName);
+        // If the path is not absolute, find the assmbly
+        if (Path.IsPathFullyQualified(assemblyName)) {
+            assemblyPath = Path.Exists(assemblyName) ? assemblyName : null;
         }
-
-        // Try the reference assembly directory
-        if (assemblyPath is null && c_referenceAssemblyDirectory is not null) {
-            assemblyPath = Path.Combine(c_referenceAssemblyDirectory, assemblyName);
-            if (File.Exists(assemblyPath)) {
-                isReferenceAssembly = true;
+        else {
+            // If a relative path to the assembly is given, it must be located as specified relative to the referencing file
+            if (assemblyName.IndexOfAny(c_slashes) >= 0) {
+                if (referencingPath is null) {
+                    throw new InvalidOperationException("Internal error: referencingPath should be specified when an assembly with a path is referenced.");
+                }
+                assemblyPath = Path.Combine(Path.GetFileName(referencingPath), assemblyName);
             }
-            else {
-                assemblyPath = null;
-            }
-        }
 
-        // Try the local assembly directory (where the base executable is located)
-        if (assemblyPath is null) {
-            assemblyPath = Path.Combine(c_localAssemblyDirectory, assemblyName);
-            if (!File.Exists(assemblyPath)) {
-                assemblyPath = null;
+            // Try the reference assembly directory
+            if (assemblyPath is null && c_referenceAssemblyDirectory is not null) {
+                assemblyPath = Path.Combine(c_referenceAssemblyDirectory, assemblyName);
+                if (File.Exists(assemblyPath)) {
+                    isReferenceAssembly = true;
+                }
+                else {
+                    assemblyPath = null;
+                }
+            }
+
+            // Try the local assembly directory (where the base executable is located)
+            if (assemblyPath is null) {
+                assemblyPath = Path.Combine(c_localAssemblyDirectory, assemblyName);
+                if (!File.Exists(assemblyPath)) {
+                    assemblyPath = null;
+                }
             }
         }
 
