@@ -23,7 +23,7 @@ builder.SourceDir = @"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture"
     builder.ParseCSharp(stream, c_SiteProgramResource);
 }
 
-//builder.ParseCSharp(@"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\Config.cs");
+builder.ParseCSharp(@"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\Config.cs");
 
 // Add default config if no default entry point
 // TODO: Have a test case that uses a Main function instead of top-level statements
@@ -36,15 +36,12 @@ builder.ReportDiagnostics(minSeverity: Microsoft.CodeAnalysis.DiagnosticSeverity
  if (builder.SuccessLevel >= Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
     return -1;
 
-var entryPoint = builder.Assembly?.EntryPoint;
-if (entryPoint is null) {
-    Console.WriteLine("No entry point found.");
-    return -1;
-}
+var entryPoint = builder.Assembly!.EntryPoint!; // If an entry point doesn't exist it would have errored before this point.
 
-Console.WriteLine(entryPoint.DeclaringType?.FullName ?? "(Null)");
-foreach(var member in entryPoint.DeclaringType!.GetMembers()) {
-    Console.WriteLine(member.Name);
+// Find the Prep function and call it
+var prepMethod = entryPoint.DeclaringType!.GetMethod("Prep", BindingFlags.Public | BindingFlags.Static, null, [typeof(string)], null);
+if (prepMethod is not null) {
+    prepMethod.Invoke(null, ["Phred was here."]);
 }
 
 builder.Assembly!.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
