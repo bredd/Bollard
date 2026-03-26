@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Bollard;
-public static class Project {
+public static class Bridge {
     public static ISite GetDefaultSite() {
         return new TestSite();
     }

@@ -14,7 +14,7 @@ const string c_defaultConfig = @"Console.WriteLine(""(Using Default Configuratio
 Console.WriteLine("Testing...");
 var builder = new AssemblyBuilder();
 builder.SourceDir = @"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture";
-builder.AddAssemblyReference(typeof(Bollard.Project).Assembly.Location);
+builder.AddAssemblyReference(typeof(Bollard.Bridge).Assembly.Location);
 
 // Add the common code
 {
@@ -38,12 +38,6 @@ builder.ReportDiagnostics(minSeverity: Microsoft.CodeAnalysis.DiagnosticSeverity
     return -1;
 
 var entryPoint = builder.Assembly!.EntryPoint!; // If an entry point doesn't exist it would have errored before this point.
-
-// Find the Prep function and call it
-//var prepMethod = entryPoint.DeclaringType!.GetMethod("Prep", BindingFlags.Public | BindingFlags.Static, null, [typeof(string)], null);
-//if (prepMethod is not null) {
-//    prepMethod.Invoke(null, ["Phred was here."]);
-//}
 
 Console.WriteLine("Invoking EntryPoint.");
 

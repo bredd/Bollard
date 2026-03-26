@@ -15,7 +15,7 @@ internal static partial class Program {
     private static string greeting = "(uninitialized)";
 
     static Program() {
-        Site = Bollard.Project.GetDefaultSite();
+        Site = Bollard.Bridge.GetDefaultSite();
     }
 
     public static void Prep(string message) {
