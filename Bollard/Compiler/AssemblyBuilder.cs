@@ -26,7 +26,11 @@ internal class AssemblyBuilder {
     static readonly Regex c_rxReferenceDirective = new Regex(@"^#ref\s+""([^""]+)""\s*$", RegexOptions.CultureInvariant);
 
     static readonly CSharpParseOptions c_parseOptions = new CSharpParseOptions(LanguageVersion.CSharp12); // Same version as the project in 2026. May advance this in the future.
-    static readonly CSharpCompilationOptions c_compOptions = new CSharpCompilationOptions(OutputKind.ConsoleApplication, reportSuppressedDiagnostics: false, optimizationLevel: OptimizationLevel.Release);
+    static readonly CSharpCompilationOptions c_compOptions = new CSharpCompilationOptions(
+        OutputKind.ConsoleApplication,
+        reportSuppressedDiagnostics: false,
+        optimizationLevel: OptimizationLevel.Release
+        );
 
     static readonly char[] c_slashes = { '/', '\\' };
 
@@ -82,11 +86,9 @@ internal class AssemblyBuilder {
         _trees.Add(CSharpSyntaxTree.ParseText(text, c_parseOptions, GetDiagnosticPath(sourceFileName)));
     }
 
-    /*
-    public void ParseCSharpFromString(string text, string sourceName) {
+    public void ParseCSharpString(string text, string sourceName) {
         _trees.Add(CSharpSyntaxTree.ParseText(text, c_parseOptions, sourceName));
     }
-    */
 
     private void ProcessCustomizations() {
 
@@ -117,8 +119,38 @@ internal class AssemblyBuilder {
         }
     }
 
+    public bool HasEntryPoint() {
+
+        // First check for top-level statements
+        foreach (var tree in _trees) {
+            if (tree.GetRoot().ChildNodes().Any(n => n is GlobalStatementSyntax))
+                return true;
+        }
+
+        // If no top-level statements, look for a static Main() method
+        foreach (var tree in _trees) {
+            var root = tree.GetRoot();
+            if (root.DescendantNodes().OfType<MethodDeclarationSyntax>().Any(m => {
+                if (m.Identifier.Text != "Main") return false;
+                if (!m.Modifiers.Any(SyntaxKind.StaticKeyword)) return false;
+                var returnType = m.ReturnType.ToString();
+                if (returnType != "void" && returnType != "int") return false;
+                var parameters = m.ParameterList.Parameters;
+                if (parameters.Count == 0) return true;
+                if (parameters.Count == 1
+                    && parameters[0].Type is ArrayTypeSyntax arr
+                    && arr.ElementType.ToString() == "string")
+                    return true;
+                return false;
+            })) return true;
+        }
+
+        return false;
+    }
+
     public DiagnosticSeverity BuildAssembly() {
         ProcessCustomizations();
+
         var compilation = CSharpCompilation.Create("BollardAssembly", _trees, _assemblyRefs, c_compOptions);
         using var ms = new MemoryStream();
         var result = compilation.Emit(ms);

@@ -9,6 +9,9 @@ global using System.Collections.Generic;
 
 // Elements in this class are available to configuration source file, typically "config.cs"
 
-internal partial class Program {
-    private const string greeting = "Hello.";
+internal static partial class Program {
+    public static void Prep(string message) {
+        greeting = message;
+    }
+    private static string greeting = "(uninitialized)";
 }

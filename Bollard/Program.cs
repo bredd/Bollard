@@ -1,12 +1,15 @@
 ﻿using System.IO.Enumeration;
+using System.Reflection;
 using System.Text.Json.Nodes;
 using Bollard;
 using BollardBlogger;
-using System.Reflection;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 const string c_SiteProgramResource = "Bollard.Resources.SiteProgram.cs";
 const string c_syntax = @"Syntax: BollardBlogger [sourcePath]";
 const string c_configFilename = "_bollard_config.json";
+const string c_defaultConfig = @"Console.WriteLine(""(Using Default Configuration)"");";    // TODO: Make this only print in verbose mode.
 
 Console.WriteLine("Testing...");
 var builder = new AssemblyBuilder();
@@ -20,12 +23,32 @@ builder.SourceDir = @"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture"
     builder.ParseCSharp(stream, c_SiteProgramResource);
 }
 
-builder.ParseCSharp(@"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\Config.cs");
+//builder.ParseCSharp(@"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\Config.cs");
+
+// Add default config if no default entry point
+// TODO: Have a test case that uses a Main function instead of top-level statements
+if (!builder.HasEntryPoint()) {
+    builder.ParseCSharpString(c_defaultConfig, "_defaultConfig.cs");
+}
+
 builder.BuildAssembly();
 builder.ReportDiagnostics(minSeverity: Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden);
-if (builder.SuccessLevel < Microsoft.CodeAnalysis.DiagnosticSeverity.Error) {
-    builder.Assembly!.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
+ if (builder.SuccessLevel >= Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+    return -1;
+
+var entryPoint = builder.Assembly?.EntryPoint;
+if (entryPoint is null) {
+    Console.WriteLine("No entry point found.");
+    return -1;
 }
+
+Console.WriteLine(entryPoint.DeclaringType?.FullName ?? "(Null)");
+foreach(var member in entryPoint.DeclaringType!.GetMembers()) {
+    Console.WriteLine(member.Name);
+}
+
+builder.Assembly!.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
+
 return 0;
 
 
