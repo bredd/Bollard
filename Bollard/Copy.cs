@@ -12,11 +12,11 @@ namespace Bollard;
 /// </summary>
 public class Copy {
     string _src;
-    string _dst;
+    string _dst = null!;
 
     public Copy(string src, string dst) {
         // Use the properties so that the validation is invoked.
-        Src = src;  
+        _src = src;
         Dst = dst;
     }
 

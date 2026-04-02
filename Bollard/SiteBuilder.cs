@@ -11,6 +11,7 @@ namespace Bollard;
 internal class SiteBuilder {
 
     const string c_SiteProgramResource = "Bollard.Resources.SiteProgram.cs";
+    const string c_defaultConfig = @"Console.WriteLine(""(Using Default Configuration)"");";    // TODO: Make this only print in verbose mode.
 
     static readonly EnumerationOptions c_rootDirEnumOptions = new EnumerationOptions() {
         AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
@@ -27,21 +28,62 @@ internal class SiteBuilder {
     List<Copy> _copies = new List<Copy>();
     List<string> _csSources = new List<string>();
     List<Page> _pages = new List<Page>();
+    Assembly? _assembly;
 
+    public SiteBuilder(string source) {
+        try {
+            source = Path.GetFullPath(source);
+        }
+        catch (Exception ex) {
+            throw new ApplicationException("Invalid source path: " + source, ex);
+        }
+        if (File.Exists(source)) {
+            SourceDir = Path.GetDirectoryName(source)!;
+            SourceFile = source;
+        }
+        else if (Directory.Exists(source)) {
+            SourceDir = source;
+        }
+        else {
+            throw new ApplicationException("Source directory or file not found: " + source);
+        }
+    }
 
     /// <summary>
     /// Fully-qualified native format root of the directory tree from which the site will be built.
     /// </summary>
-    public string SourceDir { get; set; } = string.Empty;
+    public string SourceDir { get; private set; } = string.Empty;
 
     /// <summary>
     /// For single-file mode, set this value to the file. Otherwise it should be null
     /// </summary>
-    public string? SourceFile { get; set; }
+    public string? SourceFile { get; private set; }
 
     private void LoadVerbatimDir(DirectoryInfo di) {
         foreach (var fi in di.EnumerateFiles("*", c_verbatimEnumOptions)) {
             _copies.Add(new Copy(fi.FullName, PathTool.GetSiteRelativePath(fi.FullName, di.FullName)));
+        }
+    }
+
+    private bool LoadFile(FileInfo fi, bool copyAssets) {
+        if (fi.Name[0] == '.')
+            return false;
+
+        switch (fi.Extension.ToLowerInvariant()) {
+        case ".cs":
+            _csSources.Add(fi.FullName);
+            return true;
+
+        case ".cshtml":
+        case ".razor":
+        case ".md":
+            _pages.Add(new Page(fi.FullName, PathTool.GetSiteRelativePath(fi.FullName, SourceDir)));
+            return true;
+
+        default:
+            if (!copyAssets) return false;
+            _copies.Add(new Copy(fi.FullName, PathTool.GetSiteRelativePath(fi.FullName, SourceDir)));
+            return true;
         }
     }
 
@@ -53,26 +95,7 @@ internal class SiteBuilder {
             ReturnSpecialDirectories = false
         };
         foreach(var fi in di.EnumerateFiles("*", options)) {
-            if (fi.Name[0] == '.')
-                continue;   // No .gitignore, .env, etc. If those are required then they go in _verbatim
-
-            switch (fi.Extension.ToLowerInvariant()) {
-            case ".cs":
-                _csSources.Add(fi.FullName);
-                break;
-
-            case ".cshtml":
-            case ".razor":
-            case ".md":
-                _pages.Add(new Page(fi.FullName, PathTool.GetSiteRelativePath(fi.FullName, SourceDir)));
-                break;
-
-            default:
-                if (copyAssets) {
-                    _copies.Add(new Copy(fi.FullName, PathTool.GetSiteRelativePath(fi.FullName, di.FullName)));
-                }
-                break;
-            }
+            LoadFile(fi, copyAssets);
         }
     }
 
@@ -108,14 +131,10 @@ internal class SiteBuilder {
             builder.ParseCSharp(stream, c_SiteProgramResource);
         }
 
-        // If single-file mode, add the one file
-        if (SourceFile is not null) {
-            builder.ParseCSharp(Path.Combine(SourceDir, SourceFile));
+        // Parse all of the CS sources
+        foreach(var source in _csSources) {
+            builder.ParseCSharp(source);
         }
-
-        // Else, add all source file in the directory tree
-
-        builder.ParseCSharp(@"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\Config.cs");
 
         // Add default config if no default entry point
         // TODO: Have a test case that uses a Main function instead of top-level statements
@@ -124,14 +143,55 @@ internal class SiteBuilder {
         }
 
         builder.BuildAssembly();
-        builder.ReportDiagnostics(minSeverity: Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden);
+        builder.ReportDiagnostics(minSeverity: Microsoft.CodeAnalysis.DiagnosticSeverity.Warning);
         if (builder.SuccessLevel >= Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            return -1;
+            throw new ApplicationException("Errors in the build.");
 
+        _assembly = builder.Assembly;
     }
 
-    public void Go() {
+    public void Build() {
+        var stopwatch = new Stopwatch();
+        stopwatch.Start();
 
+        // If single-file mode, prep appropriately
+        if (SourceFile is not null) {
+            var fi = new FileInfo(SourceFile);
+            if (!fi.Exists)
+                throw new FileNotFoundException("Source file not found: " + fi.FullName);
+            SourceDir = fi.DirectoryName!;
+            // TODO: Destination directory = SourceDir
+            if (!LoadFile(fi, false))
+                throw new ApplicationException("Nothing to do with source file: " + fi.FullName);
+        }
 
+        // Otherwise, prep a directory tree for processing
+        else {
+            if (!Directory.Exists(SourceDir)) {
+                throw new ApplicationException("Directory not found: " + SourceDir);
+            }
+            // TODO: Destination directory = SourceDir + "/_site";
+            LoadFiles();
+        }
+
+        BuildAssembly();
+
+        stopwatch.Stop();
+        Console.WriteLine($"Compiled in {stopwatch.ElapsedMilliseconds:N0}ms.");
+    }
+
+    public void Run() {
+        if (_assembly is null)
+            throw new InvalidOperationException("No assembly to run.");
+
+        var stopwatch = new Stopwatch();
+        stopwatch.Start();
+
+        // Invoke the assembly entrypoint to update the configuration.
+        // TODO: Command-line argument passthrough to the entrypoint.
+        _assembly.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
+
+        stopwatch.Stop();
+        Console.WriteLine($"Run completed in {stopwatch.ElapsedMilliseconds:N0}ms.");
     }
 }

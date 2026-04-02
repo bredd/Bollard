@@ -6,45 +6,22 @@ using BollardBlogger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
-const string c_SiteProgramResource = "Bollard.Resources.SiteProgram.cs";
 const string c_syntax = @"Syntax: BollardBlogger [sourcePath]";
 const string c_configFilename = "_bollard_config.json";
-const string c_defaultConfig = @"Console.WriteLine(""(Using Default Configuration)"");";    // TODO: Make this only print in verbose mode.
 
-Console.WriteLine("Testing...");
-var builder = new AssemblyBuilder();
-builder.SourceDir = @"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture";
-builder.AddAssemblyReference(typeof(Bollard.Bridge).Assembly.Location);
-
-// Add the common code
-{
-    using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(c_SiteProgramResource);
-    if (stream is null)
-        throw new InvalidOperationException($"Resource '{c_SiteProgramResource}' not found in assembly.");
-    builder.ParseCSharp(stream, c_SiteProgramResource);
-}
-
-builder.ParseCSharp(@"C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\Config.cs");
-
-// Add default config if no default entry point
-// TODO: Have a test case that uses a Main function instead of top-level statements
-if (!builder.HasEntryPoint()) {
-    builder.ParseCSharpString(c_defaultConfig, "_defaultConfig.cs");
-}
-
-builder.BuildAssembly();
-builder.ReportDiagnostics(minSeverity: Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden);
- if (builder.SuccessLevel >= Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+// For now, only accept one argument
+if (args.Length != 1) {
+    Console.WriteLine(c_syntax);
     return -1;
+}
 
-var entryPoint = builder.Assembly!.EntryPoint!; // If an entry point doesn't exist it would have errored before this point.
+// TODO: Accept -verbose option and pass other arguments to the project.
 
-Console.WriteLine("Invoking EntryPoint.");
-
-builder.Assembly!.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
-
+// SiteBuilder checks that the file or directory exists.
+var siteBuilder = new SiteBuilder(args[0]);
+siteBuilder.Build();
+siteBuilder.Run();
 return 0;
-
 
 // Parse the command line
 string? srcDir = null;
