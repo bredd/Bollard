@@ -6,6 +6,8 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Razor.Language;
+using Microsoft.AspNetCore.Razor.Language.Intermediate;
 
 namespace Bollard;
 
@@ -20,6 +22,7 @@ internal class SiteBuilder {
 
     const string c_SiteProgramResource = "Bollard.Resources.SiteProgram.cs";
     const string c_defaultConfig = @"Console.WriteLine(""(Using Default Configuration)"");";    // TODO: Make this only print in verbose mode.
+    const string c_loweredDirectory = "_lowered";
 
     static readonly EnumerationOptions c_rootDirEnumOptions = new EnumerationOptions() {
         AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
@@ -79,7 +82,7 @@ internal class SiteBuilder {
 
     private void LoadVerbatimDir(DirectoryInfo di) {
         foreach (var fi in di.EnumerateFiles("*", c_verbatimEnumOptions)) {
-            _copies.Add(new Copy(fi.FullName, PathTool.GetSiteRelativePath(fi.FullName, di.FullName)));
+            _copies.Add(new Copy(fi.FullName, PathTool.GetLocalPath(fi.FullName, di.FullName)));
         }
     }
 
@@ -96,12 +99,12 @@ internal class SiteBuilder {
         case ".razor":
         case ".csmd":
         case ".md":
-            _pages.Add(new Page(fi.FullName, PathTool.GetSiteRelativePath(fi.FullName, SourceDir)));
+            _pages.Add(new Page(fi.FullName, PathTool.GetLocalPath(fi.FullName, SourceDir)));
             return true;
 
         default:
             if (!copyAssets) return false;
-            _copies.Add(new Copy(fi.FullName, PathTool.GetSiteRelativePath(fi.FullName, SourceDir)));
+            _copies.Add(new Copy(fi.FullName, PathTool.GetLocalPath(fi.FullName, SourceDir)));
             return true;
         }
     }
@@ -127,6 +130,8 @@ internal class SiteBuilder {
                 continue; // Skip linux-style special directories.
             if (string.Equals(sdi.Name, "_site", StringComparison.OrdinalIgnoreCase))
                 continue; // Skip the output directory even if it's a case mismatch
+            if (string.Equals(sdi.Name, c_loweredDirectory, StringComparison.OrdinalIgnoreCase))
+                continue; // Skip the lowered directory even if it's a case mismatch
             if (string.Equals(sdi.Name, "_verbatim", StringComparison.Ordinal)) {
                 LoadVerbatimDir(sdi);
                 continue;
@@ -136,6 +141,8 @@ internal class SiteBuilder {
     }
 
     private void BuildAssembly() {
+        
+        // Prep the C# compiler
         var builder = new AssemblyBuilder();
         builder.SourceDir = SourceDir;
 
@@ -153,6 +160,52 @@ internal class SiteBuilder {
         // Parse all of the CS sources
         foreach(var source in _csSources) {
             builder.ParseCSharp(source);
+        }
+
+        // Prep the Razor engine
+        var razorEngine = RazorProjectEngine.Create(
+            RazorConfiguration.Default,
+            RazorProjectFileSystem.Create(SourceDir),
+            builder => {
+                //builder.SetRootNamespace("RootNamespace"); // Namespace prefix
+                builder.SetNamespace("HooDoo");       // Can be overridden by @namespace
+                builder.ConfigureClass((document, node) => {
+                    node.BaseType = "RazorTemplate";  // This can be overridden by the @inherits directive
+                    node.ClassName = "Template";      // This could be derived from the filename by using document.Source.FilePath;
+                });
+                // The following will add a new directive to be parsed (e.g. @mydirective Go). But making The directive do anything is a different task.
+                // builder.AddDirective(DirectiveDescriptor.CreateSingleLineDirective("mydirective", b => b.AddMemberToken("memberTokenName", "memberTokenDescription")));
+            });
+
+        // Create the _lowered directory if needed
+        var loweredDir = string.Empty;
+        if (Lowering) {
+            loweredDir = Path.Combine(SourceDir, c_loweredDirectory);
+            // Does nothing if the directory already exists
+            Directory.CreateDirectory(loweredDir);
+        }
+
+        // Convert and parse all of the Razor sources
+        foreach (var page in _pages) {
+            var item = razorEngine.FileSystem.GetItem(page.Src, FileKinds.Legacy); // Alternative is FileKinds.Component which does not support the MVC extensions
+            // TODO: Gracefully degrade if a file is not found.
+            if (!item.Exists)
+                throw new FileNotFoundException("File not found in RazorProjectFileSystem", page.Src);
+            var doc = razorEngine.Process(item);
+
+            // This doesn't work to find the @page directive because the MVC extensions are not loaded.
+            // My expected plan is to write my own equivalent extensions but that is TBD.
+            var ir = doc.GetDocumentIntermediateNode();
+            foreach (var node in ir.FindDescendantNodes<DirectiveIntermediateNode>()) {
+                Console.WriteLine(node);
+            }
+
+            if (Lowering) {
+                using var writer = new StreamWriter(PathTool.GetAbsolutePath(loweredDir, PathTool.ChangeExtension(page.Dst, ".cs")));
+                writer.Write(doc.GetCSharpDocument().GeneratedCode);
+            }
+
+            // TODO: Add to compilation.
         }
 
         // Add default config if no default entry point

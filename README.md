@@ -50,6 +50,14 @@ I will soon begin using GitHub Projects to manage the feature backlog. But for n
 
 ## Development and Architecture Notes
 * The Razor-using precedents on which Bollard is modeled are [Razor Pages](https://learn.microsoft.com/en-us/aspnet/core/razor-pages/) (standalone, the closest to Bollard) and Razor Views (follows an MVC pattern). While the razor files may be 100% compatible with these, the codebehind will be slightly different due to different `using` dependencies.
+* (Maybe the above won't necessarily be right) The OnXxx events don't fire and they are a fundamental part of the MVC Razor Pages pattern. Need to test each feature of the MVC pattern and decide what to use.
+    * _ViewImports.cshtml
+    * _ViewStart.cshtml
+    * @page
+    * @model
+    * @addTagHelper
+    * @section
+    * other directives and features
 
 
 ## Finishing Steps

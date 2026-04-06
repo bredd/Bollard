@@ -10,7 +10,7 @@
     },
     "NewArchitecture": {
       "commandName": "Project",
-      "commandLineArgs": "$(SolutionDir)Tests/NewArchitecture"
+      "commandLineArgs": "$(SolutionDir)Tests/NewArchitecture -lowering"
     }
   }
 }

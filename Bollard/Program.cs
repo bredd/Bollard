@@ -9,12 +9,6 @@ using Microsoft.CodeAnalysis.CSharp;
 const string c_syntax = @"Syntax: BollardBlogger [sourcePath]";
 const string c_configFilename = "_bollard_config.json";
 
-// For now, only accept one argument
-if (args.Length != 1) {
-    Console.WriteLine(c_syntax);
-    return -1;
-}
-
 // Parse the command line
 string? source = null;
 VerbosityLevel verbosity = VerbosityLevel.Default;
