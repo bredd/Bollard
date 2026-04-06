@@ -8,6 +8,14 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Bollard;
+
+enum VerbosityLevel {
+    Quiet = 0,
+    Default = 1, 
+    Verbose = 2,
+    Extra = 3
+}
+
 internal class SiteBuilder {
 
     const string c_SiteProgramResource = "Bollard.Resources.SiteProgram.cs";
@@ -49,15 +57,25 @@ internal class SiteBuilder {
         }
     }
 
+    public VerbosityLevel Verbosity { get; set; }
+
+    public bool Lowering { get; set; }
+
+    public DiagnosticSeverity DiagnosticLevel { get; set; } = DiagnosticSeverity.Warning;
+
     /// <summary>
     /// Fully-qualified native format root of the directory tree from which the site will be built.
     /// </summary>
     public string SourceDir { get; private set; } = string.Empty;
 
+    public string[] SiteArgs { get; set; } = [];
+
     /// <summary>
     /// For single-file mode, set this value to the file. Otherwise it should be null
     /// </summary>
     public string? SourceFile { get; private set; }
+
+    public DiagnosticSeverity BuildSuccessLevel { get; private set; }
 
     private void LoadVerbatimDir(DirectoryInfo di) {
         foreach (var fi in di.EnumerateFiles("*", c_verbatimEnumOptions)) {
@@ -76,6 +94,7 @@ internal class SiteBuilder {
 
         case ".cshtml":
         case ".razor":
+        case ".csmd":
         case ".md":
             _pages.Add(new Page(fi.FullName, PathTool.GetSiteRelativePath(fi.FullName, SourceDir)));
             return true;
@@ -142,15 +161,13 @@ internal class SiteBuilder {
             builder.ParseCSharpString(c_defaultConfig, "_defaultConfig.cs");
         }
 
-        builder.BuildAssembly();
-        builder.ReportDiagnostics(minSeverity: Microsoft.CodeAnalysis.DiagnosticSeverity.Warning);
-        if (builder.SuccessLevel >= Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
-            throw new ApplicationException("Errors in the build.");
+        BuildSuccessLevel = builder.BuildAssembly();
+        builder.ReportDiagnostics(minSeverity: DiagnosticLevel);
 
         _assembly = builder.Assembly;
     }
 
-    public void Build() {
+    public DiagnosticSeverity Build() {
         var stopwatch = new Stopwatch();
         stopwatch.Start();
 
@@ -177,7 +194,10 @@ internal class SiteBuilder {
         BuildAssembly();
 
         stopwatch.Stop();
-        Console.WriteLine($"Compiled in {stopwatch.ElapsedMilliseconds:N0}ms.");
+        if (Verbosity >= VerbosityLevel.Default)
+            Console.WriteLine($"Compiled in {stopwatch.ElapsedMilliseconds:N0}ms.");
+
+        return BuildSuccessLevel;
     }
 
     public void Run() {
@@ -192,6 +212,7 @@ internal class SiteBuilder {
         _assembly.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
 
         stopwatch.Stop();
-        Console.WriteLine($"Run completed in {stopwatch.ElapsedMilliseconds:N0}ms.");
+        if (Verbosity >= VerbosityLevel.Default)
+            Console.WriteLine($"Build completed in {stopwatch.ElapsedMilliseconds:N0}ms.");
     }
 }

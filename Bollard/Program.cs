@@ -15,11 +15,74 @@ if (args.Length != 1) {
     return -1;
 }
 
-// TODO: Accept -verbose option and pass other arguments to the project.
+// Parse the command line
+string? source = null;
+VerbosityLevel verbosity = VerbosityLevel.Default;
+bool lowering = false;
+DiagnosticSeverity diagnosticLevel = DiagnosticSeverity.Warning;
+bool help;
+string[] siteArgs = [];
+for (int i = 0; i < args.Length; i++) {
+    switch (args[i]) {
+    case "-quiet":
+        verbosity = VerbosityLevel.Quiet;
+        break;
+
+    case "-verbose":
+        verbosity = VerbosityLevel.Verbose;
+        break;
+
+    case "-extraverbose":
+        verbosity = VerbosityLevel.Extra;
+        break;
+
+    case "-lowering":
+        lowering = true;
+        break;
+
+    case "-diagnostic":
+        ++i;
+        if (!Enum.TryParse(args[i], true, out diagnosticLevel))
+            throw new ApplicationException("Unknown diagnostic severity: " + args[i]);
+        break;
+
+    case "-h":
+        help = true;
+        goto loopbreak;
+
+    case "--":
+        siteArgs = args[(i + 1)..];
+        goto loopbreak;
+
+    default:
+        if (args[i][0] == '-')
+            throw new ApplicationException("Unknown option: " + args[i]);
+        if (source is not null)
+            throw new ApplicationException("Unexpected argument: " + args[i]);
+        source = args[i];
+        break;
+    }
+}
+loopbreak:
+
+if (source is null)
+    source = Environment.CurrentDirectory;
+
+Console.WriteLine("Producing site from: " + source);
 
 // SiteBuilder checks that the file or directory exists.
-var siteBuilder = new SiteBuilder(args[0]);
-siteBuilder.Build();
+var siteBuilder = new SiteBuilder(source) {
+    Verbosity = verbosity,
+    Lowering = lowering,
+    DiagnosticLevel = diagnosticLevel,
+    SiteArgs = siteArgs
+};
+
+var successLevel = siteBuilder.Build();
+if (successLevel >= DiagnosticSeverity.Error) {
+    Console.WriteLine("Errors in the build. Exiting.");
+    return -1;
+}
 siteBuilder.Run();
 return 0;
 

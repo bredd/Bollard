@@ -1,21 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Dynamic;
-using System.Linq;
+﻿global using DiagnosticSeverity = Microsoft.CodeAnalysis.DiagnosticSeverity;
+
+using System;
+using System.Collections.Immutable;
 using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
-using System.Web;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.ComponentModel.DataAnnotations;
-using System.Collections.Immutable;
-using System.Security.Cryptography.X509Certificates;
-using Microsoft.CodeAnalysis.Emit;
+using Microsoft.CodeAnalysis.Text;
 
 namespace Bollard;
 
