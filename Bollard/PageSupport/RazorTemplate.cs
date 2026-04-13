@@ -2,16 +2,13 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Threading.Tasks;
 
 namespace Bollard;
 
-// Should have a functional base class and then subclasses with encoding for the following:
-//    HTML (including XML and SVG)
-//    JSON
-//    Others?
-
+/// <summary>
+/// Minimal template that doesn't do any special encoding. Therefore, it has no HTML class (for HTML.Raw())
+/// </summary>
 public abstract class RazorTemplate {
 
     #region Available to Razor

@@ -173,6 +173,7 @@ internal class SiteBuilder {
                     node.BaseType = "RazorTemplate";  // This can be overridden by the @inherits directive
                     node.ClassName = "Template";      // This could be derived from the filename by using document.Source.FilePath;
                 });
+                CustomRazorDirectives.AddToRazorProject(builder);
                 // The following will add a new directive to be parsed (e.g. @mydirective Go). But making The directive do anything is a different task.
                 // builder.AddDirective(DirectiveDescriptor.CreateSingleLineDirective("mydirective", b => b.AddMemberToken("memberTokenName", "memberTokenDescription")));
             });
@@ -193,12 +194,14 @@ internal class SiteBuilder {
                 throw new FileNotFoundException("File not found in RazorProjectFileSystem", page.Src);
             var doc = razorEngine.Process(item);
 
-            // This doesn't work to find the @page directive because the MVC extensions are not loaded.
-            // My expected plan is to write my own equivalent extensions but that is TBD.
-            var ir = doc.GetDocumentIntermediateNode();
-            foreach (var node in ir.FindDescendantNodes<DirectiveIntermediateNode>()) {
-                Console.WriteLine(node);
+            // Get directives
+            foreach (var directive in CustomRazorDirectives.GetCustomDirectives(doc)) {
+                Console.WriteLine($"    @{directive.Key} {directive.Value}");
             }
+
+            Console.WriteLine();
+
+            
 
             if (Lowering) {
                 using var writer = new StreamWriter(PathTool.GetAbsolutePath(loweredDir, PathTool.ChangeExtension(page.Dst, ".cs")));
