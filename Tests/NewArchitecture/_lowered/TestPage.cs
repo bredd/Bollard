@@ -11,6 +11,7 @@ namespace HooDoo
         #pragma warning disable 1998
         public async override global::System.Threading.Tasks.Task ExecuteAsync()
         {
+            Layout = "Value";
             WriteLiteral("<html>\r\n<head>\r\n    <title>Test Page</title>\r\n</head>\r\n<body>\r\n    <h1>Test Page</h1>\r\n    <p>Hello, world!</p>\r\n    <p>");
 #nullable restore
 #line 10 "C:\Users\brand\Source\bredd\Bollard\Tests\NewArchitecture\TestPage.cshtml"

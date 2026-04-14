@@ -16,7 +16,7 @@ internal class CustomRazorDirectives {
     const string c_layoutDirectiveName = "layout";
 
     // The descriptor tells the parser what this is.
-    public static readonly DirectiveDescriptor c_pageDirective =
+    private static readonly DirectiveDescriptor c_pageDirective =
         DirectiveDescriptor.CreateSingleLineDirective(c_pageDirectiveName,
             builder => {
                 // Name and description arguments are just for diagnostic feedback to the user. They don't affect operation
@@ -25,7 +25,7 @@ internal class CustomRazorDirectives {
                 builder.Usage = DirectiveUsage.FileScopedSinglyOccurring; // Modifies the prior setting.
             });
 
-    public static readonly DirectiveDescriptor c_layoutDirective =
+    private static readonly DirectiveDescriptor c_layoutDirective =
     DirectiveDescriptor.CreateSingleLineDirective(c_layoutDirectiveName,
         builder => {
             // Name and description arguments are just for diagnostic feedback to the user. They don't affect operation
@@ -33,7 +33,12 @@ internal class CustomRazorDirectives {
             builder.Usage = DirectiveUsage.FileScopedSinglyOccurring; // Modifies the prior setting.
         });
 
-    public sealed class CustomDirectiveIntermediateNode : IntermediateNode {
+    private abstract class CSharpGenerationNode : IntermediateNode {
+        public override IntermediateNodeCollection Children => IntermediateNodeCollection.ReadOnly; // Badly named but returns empty which is what we want.
+        public abstract void GenerateCSharp(DocumentIntermediateNode doc);
+    }
+
+    private class CustomDirectiveIntermediateNode : IntermediateNode {
         required public string Name { get; set; }
         required public string Value { get; set; }
 
@@ -42,30 +47,72 @@ internal class CustomRazorDirectives {
             => visitor.VisitDefault(this);
     }
 
+    private class LayoutDirectiveNode : CSharpGenerationNode {
+        required public string Value { get; set; }
+
+        public override void Accept(IntermediateNodeVisitor visitor)
+            => visitor.VisitDefault(this);
+
+        public override void GenerateCSharp(DocumentIntermediateNode doc) {
+            var method = doc.FindPrimaryMethod();
+            if (method is null)
+                throw new InvalidOperationException("Expected method to be ready. Possibly the wrong pass.");
+            method.Children.Insert(0, new CSharpCodeIntermediateNode {
+                Children = {
+                    new IntermediateToken {
+                        Kind = TokenKind.CSharp,
+                        Content = $"Layout = \"Value\";"
+                    }
+                }
+            });
+        }
+    }
+
     public class ClassifierPass : IRazorDirectiveClassifierPass {
         public int Order => 0;
 
         public RazorEngine? Engine { get; set; }
 
         public void Execute(RazorCodeDocument codeDocument, DocumentIntermediateNode documentNode) {
-            Console.WriteLine("@Page ClassifierPass");
-            TestPhase.DumpRecursive(1, documentNode);
-
-            foreach (var directive in documentNode.FindDescendantNodes<Microsoft.AspNetCore.Razor.Language.Intermediate.DirectiveIntermediateNode>()) {
+            foreach (var directive in documentNode.FindDescendantNodes<DirectiveIntermediateNode>()) {
                 var name = directive.DirectiveName;
                 var value = directive.Tokens.FirstOrDefault()?.Content ?? string.Empty;
-                Console.WriteLine($"==== Directive: @{name} {value}");
 
-                var node = new CustomDirectiveIntermediateNode() {
-                    Name = name,
-                    Value = value
-                };
-
-                documentNode.Children.Add(node);
+                if (name == c_layoutDirectiveName) {
+                    var node = new LayoutDirectiveNode() { Value = value };
+                    documentNode.Children.Add(node);
+                }
+                else {
+                    var node = new CustomDirectiveIntermediateNode() {
+                        Name = name,
+                        Value = value
+                    };
+                    documentNode.Children.Add(node);
+                }
             }
         }
     }
 
+    public class CSharpGenerationPhase : IRazorCSharpLoweringPhase {
+        public RazorEngine? Engine { get; set; }
+
+        public void Execute(RazorCodeDocument codeDocument) {
+            var documentNode = codeDocument.GetDocumentIntermediateNode();
+            if (documentNode is null)
+                throw new InvalidOperationException("DocumentIntermediateNode should be present here.");
+            foreach (var node in documentNode.FindDescendantNodes<CSharpGenerationNode>()) {
+                node.GenerateCSharp(documentNode);
+            }
+        }
+
+        public static void Attach(RazorProjectEngineBuilder builder) {
+            // Insert right before the last phase (CSharp Generation).
+            var phases = builder.Phases;
+            phases.Insert(phases.Count-1, new CSharpGenerationPhase());
+        }
+    }
+
+#if DEBUG
     public class TestPhase : IRazorDirectiveClassifierPhase {
         string _label;
 
@@ -128,15 +175,15 @@ internal class CustomRazorDirectives {
             }
         }
     }
+#endif // DEBUG
 
     public static RazorProjectEngineBuilder AddToRazorProject(RazorProjectEngineBuilder builder) {
         builder.AddDirective(c_pageDirective);
         builder.AddDirective(c_layoutDirective);
 
-        TestPhase.Attach(builder);
+        CSharpGenerationPhase.Attach(builder);
+        //TestPhase.Attach(builder);
 
-        //builder.Phases.Add(new ClassifierPhase());
-        //builder.Phases.Add(new TestPhase());
         builder.Features.Add(new ClassifierPass());
         return builder; // Supports chaining syntax
     }
