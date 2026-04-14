@@ -195,13 +195,11 @@ internal class SiteBuilder {
             var doc = razorEngine.Process(item);
 
             // Get directives
-            foreach (var directive in CustomRazorDirectives.GetCustomDirectives(doc)) {
-                Console.WriteLine($"    @{directive.Key} {directive.Value}");
-            }
-
             Console.WriteLine();
-
-            
+            foreach (var datum in CustomRazorDirectives.GetCustomData(doc)) {
+                Console.WriteLine($"  CustomData: name={datum.Key} value={datum.Value}");
+            }
+            Console.WriteLine();         
 
             if (Lowering) {
                 using var writer = new StreamWriter(PathTool.GetAbsolutePath(loweredDir, PathTool.ChangeExtension(page.Dst, ".cs")));

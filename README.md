@@ -67,9 +67,13 @@ I will soon begin using GitHub Projects to manage the feature backlog. But for n
 * Compile all .cs and all .cshtml files in the directory tree
 
 ## Next Steps
-* Get the config file the way I want it - possibly as a bare c# file. 
+* ✅ Get the config file the way I want it - possibly as a bare c# file.
 * Update the Razor engine wrapper to compile all of the razor files and associated codebehind files into one assembly. Concurrently queue up calls to the pages that should be built by default. This will create a framework whereby pages can call each other and for injecting Razor components.
-    * In the process, add an option to output the generated csharp code for debugging purposes.
+    * ✅lowered csharp output
+    * ✅@page directive
+    * ✅@layout directive
+    * Capture and report errors - do not compile razor-produced C# if there was an error in the compilation
+    * Generate diagnostics (hidden or warning) when page is defaulted.
 * Add default usings per the info in this chat: https://copilot.microsoft.com/chats/bG4J1tPWLkPYxF2Ddk7Kk
 * Update the base class for the template and base class for the model to match those used in razor pages as closely as reasonable.
 * Test other basic Razor Page operations until most/all things in typical tutorials work.

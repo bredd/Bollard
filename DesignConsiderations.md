@@ -69,6 +69,7 @@ More to come here.
 * Options
     * call builder.SetDefaultImportFileName("_ViewImports.cshtml") and implement IRazorImportSourceProvider
     * Add MVC Razor Extensions through the right NuGet and builder.AddMvcRazorExtensions()
+    * builder.Features.Add(IRazorDocumentClassifierPass) to indicate the special document classes for _ViewImports and _ViewStart
     * builder.Features.Add(new DefaultImportFeature(source))
     * Probably more. CoPilot seems to have most of the info.
 
@@ -78,6 +79,7 @@ More to come here.
 * Strictly one top-level C# code block: @{ Layout = "_Layout" } plus comments, whitespace, etc.
 * Implementation
     * Register a document classifier with RazorProjectEngine
+    * builder.Features.Add(IRazorDocumentClassifierPass) to indicate the special document classes for _ViewImports and _ViewStart
     * Probably more. CoPilot seems to have most of the info.
 
 #### @section directive
@@ -87,6 +89,10 @@ More to come here.
 
 #### Tag Helpers
 * https://www.learnrazorpages.com/razor-pages/tag-helpers
+
+
+## Future Feature Notes
+
 
 
 
