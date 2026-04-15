@@ -38,7 +38,6 @@ internal class CustomRazorDirectives {
         DirectiveDescriptor.CreateSingleLineDirective(c_pageDirectiveName,
             builder => {
                 // Name and description arguments are just for diagnostic feedback to the user. They don't affect operation
-                builder.AddOptionalStringToken("keyword", "'none'");
                 builder.AddOptionalStringToken("path", "Site path to output destination.");
                 builder.Usage = DirectiveUsage.FileScopedSinglyOccurring; // Modifies the prior setting.
             });
