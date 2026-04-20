@@ -27,6 +27,7 @@ internal class SiteBuilder {
     const string c_SiteProgramResource = "Bollard.Resources.SiteProgram.cs";
     const string c_defaultConfig = @"Console.WriteLine(""(Using Default Configuration)"");";    // TODO: Make this only print in verbose mode.
     const string c_loweredDirectory = "_lowered";
+    const string c_rootNamespace = "BollardPages";
 
     static readonly EnumerationOptions c_rootDirEnumOptions = new EnumerationOptions() {
         AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
@@ -242,12 +243,7 @@ internal class SiteBuilder {
             RazorConfiguration.Default,
             RazorProjectFileSystem.Create(SourceDir),
             builder => {
-                builder.SetRootNamespace("BBollard"); // Namespace prefix
-                //builder.SetNamespace("HooDoo");       // Can be overridden by @namespace
-                //builder.ConfigureClass((document, node) => {
-                //    node.BaseType = "RazorTemplate";  // This can be overridden by the @inherits directive
-                //    node.ClassName = "Template";      // This could be derived from the filename by using document.Source.FilePath;
-                //});
+                builder.SetRootNamespace(c_rootNamespace); // Namespace prefix recoginized by RazorCodeDocument.TryComputeNamespace
                 CustomRazorDirectives.AddToRazorProject(builder);
                 // The following will add a new directive to be parsed (e.g. @mydirective Go). But making The directive do anything is a different task.
                 // builder.AddDirective(DirectiveDescriptor.CreateSingleLineDirective("mydirective", b => b.AddMemberToken("memberTokenName", "memberTokenDescription")));
