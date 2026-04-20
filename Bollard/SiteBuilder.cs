@@ -199,7 +199,25 @@ internal class SiteBuilder {
             foreach (var datum in CustomRazorDirectives.GetCustomData(doc)) {
                 Console.WriteLine($"  CustomData: name={datum.Key} value={datum.Value}");
             }
-            Console.WriteLine();         
+            Console.WriteLine();
+
+            var razorDoc = doc.GetDocumentIntermediateNode();
+            if (razorDoc.HasDiagnostics) {
+                Console.WriteLine("RazorDoc.Diagnostics");
+                foreach (RazorDiagnostic? diag in razorDoc.Diagnostics) {
+                    Console.WriteLine(diag.ToString());
+                }
+            }
+
+            var csDoc = doc.GetCSharpDocument();
+            if (csDoc.Diagnostics.Count > 0) {
+                Console.WriteLine("csDoc.Diagnostics");
+                foreach (var diag in csDoc.Diagnostics) {
+                    Console.WriteLine(diag.ToString());
+                    Console.WriteLine(diag.ToCompilerDiagnostic(SourceDir).ToString());
+                    //Console.WriteLine($"Diag: LineIndex={diag.Span.LineIndex} CharacterIndex={diag.Span.CharacterIndex}-{diag.Span.EndCharacterIndex} AbsoluteIndex={diag.Span.AbsoluteIndex}");
+                }
+            }
 
             if (Lowering) {
                 using var writer = new StreamWriter(PathTool.GetAbsolutePath(loweredDir, PathTool.ChangeExtension(page.Dst, ".cs")));
