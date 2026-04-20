@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.AspNetCore.Razor.Language.CodeGeneration;
 using Microsoft.AspNetCore.Razor.Language.Intermediate;
 using static System.Net.Mime.MediaTypeNames;
-using static Bollard.CustomRazorDirectives;
+using static Bollard.RazorCustomizations;
 
 /* RazorProjectEngine phases and passes determined to date
  *   DefaultRazorParsingPhase
@@ -29,7 +29,7 @@ using static Bollard.CustomRazorDirectives;
 
 
 namespace Bollard;
-internal class CustomRazorDirectives {
+internal class RazorCustomizations {
 
     const string c_pageDirectiveName = "page";
     const string c_layoutDirectiveName = "layout";
@@ -211,6 +211,7 @@ internal class CustomRazorDirectives {
 #endif // DEBUG
 
     public static RazorProjectEngineBuilder AddToRazorProject(RazorProjectEngineBuilder builder) {
+        // Adding directives registers them but they must be processed in the later passes or phases.
         builder.AddDirective(c_pageDirective);
         builder.AddDirective(c_layoutDirective);
         builder.Features.Add(new CustomClassNamePass());

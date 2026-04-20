@@ -244,9 +244,7 @@ internal class SiteBuilder {
             RazorProjectFileSystem.Create(SourceDir),
             builder => {
                 builder.SetRootNamespace(c_rootNamespace); // Namespace prefix recoginized by RazorCodeDocument.TryComputeNamespace
-                CustomRazorDirectives.AddToRazorProject(builder);
-                // The following will add a new directive to be parsed (e.g. @mydirective Go). But making The directive do anything is a different task.
-                // builder.AddDirective(DirectiveDescriptor.CreateSingleLineDirective("mydirective", b => b.AddMemberToken("memberTokenName", "memberTokenDescription")));
+                RazorCustomizations.AddToRazorProject(builder);
             });
 
         // Create the _lowered directory if needed
@@ -268,10 +266,10 @@ internal class SiteBuilder {
 
             // Get directives
             Console.WriteLine();
-            foreach (var datum in CustomRazorDirectives.GetCustomData(doc)) {
+            foreach (var datum in RazorCustomizations.GetCustomData(doc)) {
                 Console.WriteLine($"  CustomData: name={datum.Key} value={datum.Value}");
             }
-            Console.WriteLine($"=== Class: {CustomRazorDirectives.GetClassFullName(doc)}");
+            Console.WriteLine($"=== Class: {RazorCustomizations.GetClassFullName(doc)}");
             Console.WriteLine();
 
             var csDoc = doc.GetCSharpDocument();
