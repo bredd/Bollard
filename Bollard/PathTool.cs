@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace Bollard;
 static internal class PathTool {
@@ -22,10 +23,20 @@ static internal class PathTool {
 #endif
     }
 
+    /// <summary>
+    /// A local path starts with a slash and indicates the path relative to the base of the site. It uses forward slashes as path separators.
+    /// </summary>
+    /// <param name="path">The path to convert.</param>
+    /// <param name="basePath">The base path of the site.</param>
+    /// <returns>A local path.</returns>
+    /// <remarks>
+    /// The path MUST start with basePath.
+    /// </remarks>
     public static string GetLocalPath(string path, string basePath) {
         int diLen = basePath.Length;
         Debug.Assert(path.StartsWith(basePath));
         Debug.Assert(basePath[diLen - 1] != Path.DirectorySeparatorChar);
+        if (!path.StartsWith(basePath)) return path;    // Release version fallback.
         if (path.Length <= diLen)
             return "/";
         Debug.Assert(path[diLen] == Path.DirectorySeparatorChar || path[diLen] == '/');
@@ -58,6 +69,42 @@ static internal class PathTool {
         if (dot > slash)
             path = path.Substring(0, dot);
         return string.Concat(path, extension);
+    }
+
+    /// <summary>
+    /// Converts a filename (just a name, not a path) to a valid C# name.
+    /// </summary>
+    /// <param name="filename"></param>
+    /// <returns>A valid C# name.</returns>
+    public  static string SanitizeToCSharpName(string filename) {
+        var chars = filename.ToCharArray();
+        var result = new StringBuilder(chars.Length);
+
+        // First character: must be a valid identifier-start character
+        char first = chars[0];
+        if (SyntaxFacts.IsIdentifierStartCharacter(first)) {
+            result.Append(first);
+        }
+        else {
+            // If invalid, prefix with '_' and sanitize the first character
+            result.Append('_');
+
+            if (SyntaxFacts.IsIdentifierPartCharacter(first))
+                result.Append(first);
+            else
+                result.Append('_');
+        }
+
+        // Remaining characters: identifier-part characters only
+        for (int i = 1; i < chars.Length; i++) {
+            char c = chars[i];
+            if (SyntaxFacts.IsIdentifierPartCharacter(c))
+                result.Append(c);
+            else
+                result.Append('_');
+        }
+
+        return result.ToString();
     }
 
 }

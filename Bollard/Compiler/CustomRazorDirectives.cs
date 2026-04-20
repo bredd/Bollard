@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Text;
@@ -30,8 +31,10 @@ using static Bollard.CustomRazorDirectives;
 namespace Bollard;
 internal class CustomRazorDirectives {
 
+    const string c_defaultRootNamespace = "BBollard";
     const string c_pageDirectiveName = "page";
     const string c_layoutDirectiveName = "layout";
+    const string c_namespaceDirectiveName = "namespace";
 
     // The descriptor tells the parser what this is.
     private static readonly DirectiveDescriptor c_pageDirective =
@@ -63,6 +66,52 @@ internal class CustomRazorDirectives {
         public override IntermediateNodeCollection Children => IntermediateNodeCollection.ReadOnly; // Badly named but returns empty which is what we want.
         public override void Accept(IntermediateNodeVisitor visitor)
             => visitor.VisitDefault(this);
+    }
+
+    private class CustomClassNamePass : IRazorDocumentClassifierPass {
+        static char[] s_directorySeparators = { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
+
+        string _rootNamespace;
+        
+        public CustomClassNamePass(string rootNamespace) {
+            _rootNamespace = rootNamespace;
+        }
+
+        public int Order => 1001; // Run after built-in passes
+
+        public RazorEngine? Engine { get; set; }
+
+        public void Execute(RazorCodeDocument codeDocument, DocumentIntermediateNode documentNode) {
+            var classNode = documentNode.FindPrimaryClass();
+            var namespaceNode = documentNode.FindPrimaryNamespace();
+            Debug.Assert(classNode is not null && namespaceNode is not null);
+            if (classNode is null || namespaceNode is null) return;
+
+            var filePath = codeDocument.Source.FilePath;
+
+            classNode.ClassName = PathTool.SanitizeToCSharpName(Path.GetFileNameWithoutExtension(filePath));
+            namespaceNode.Content = ComputeNamespace(codeDocument, documentNode);
+        }
+
+        private string ComputeNamespace(RazorCodeDocument codeDocument, DocumentIntermediateNode documentNode) {
+            // Check first for @namespace directive
+            foreach (var directiveNode in documentNode.FindDescendantNodes<DirectiveIntermediateNode>()) {
+                if (directiveNode.DirectiveName == c_namespaceDirectiveName) {
+                    var token = (directiveNode.Tokens.FirstOrDefault()?.Content ?? string.Empty).Trim(' ', '"');
+                    if (!string.IsNullOrWhiteSpace(token))
+                        return token;
+                }
+            }
+
+            // No @namespace directive. Compute from path
+            var ns = new StringBuilder(_rootNamespace);
+            var directory = Path.GetDirectoryName(codeDocument.Source.RelativePath) ?? string.Empty;
+            foreach (var part in directory.Split(s_directorySeparators, StringSplitOptions.RemoveEmptyEntries|StringSplitOptions.TrimEntries)) {
+                ns.Append('.');
+                ns.Append(PathTool.SanitizeToCSharpName(part));
+            }
+            return ns.ToString();
+        }
     }
 
     private class CustomDirectivesPass : IRazorOptimizationPass {
@@ -188,6 +237,7 @@ internal class CustomRazorDirectives {
     public static RazorProjectEngineBuilder AddToRazorProject(RazorProjectEngineBuilder builder) {
         builder.AddDirective(c_pageDirective);
         builder.AddDirective(c_layoutDirective);
+        builder.Features.Add(new CustomClassNamePass(c_defaultRootNamespace));
         builder.Features.Add(new CustomDirectivesPass());
 
         //TestPhase.Attach(builder);
@@ -203,5 +253,12 @@ internal class CustomRazorDirectives {
         }
 
         return data;
+    }
+
+    public static string GetClassFullName(RazorCodeDocument doc) {
+        var documentNode = doc.GetDocumentIntermediateNode();
+        var namespaceNode = documentNode.FindPrimaryNamespace();
+        var classNode = documentNode.FindPrimaryClass();
+        return string.Concat(namespaceNode.Content, ".", classNode.ClassName);
     }
 }

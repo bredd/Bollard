@@ -4,10 +4,14 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Metadata;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.AspNetCore.Razor.Language.Intermediate;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace Bollard;
 
@@ -36,6 +40,10 @@ internal class SiteBuilder {
         ReturnSpecialDirectories = false
     };
 
+    static readonly DiagnosticDescriptor c_diagSourceFileNotFound = new DiagnosticDescriptor("BB1002", "Source File Not Found", "Source file '{0}' not found", "Bollard", DiagnosticSeverity.Error, true);
+
+
+    List<Diagnostic> _diagnostics = new List<Diagnostic>();
     List<Copy> _copies = new List<Copy>();
     List<string> _csSources = new List<string>();
     List<Page> _pages = new List<Page>();
@@ -103,7 +111,8 @@ internal class SiteBuilder {
             return true;
 
         default:
-            if (!copyAssets) return false;
+            if (!copyAssets)
+                return false;
             _copies.Add(new Copy(fi.FullName, PathTool.GetLocalPath(fi.FullName, SourceDir)));
             return true;
         }
@@ -116,7 +125,7 @@ internal class SiteBuilder {
             RecurseSubdirectories = recurse,
             ReturnSpecialDirectories = false
         };
-        foreach(var fi in di.EnumerateFiles("*", options)) {
+        foreach (var fi in di.EnumerateFiles("*", options)) {
             LoadFile(fi, copyAssets);
         }
     }
@@ -141,7 +150,7 @@ internal class SiteBuilder {
     }
 
     private void BuildAssembly() {
-        
+
         // Prep the C# compiler
         var builder = new AssemblyBuilder();
         builder.SourceDir = SourceDir;
@@ -158,74 +167,12 @@ internal class SiteBuilder {
         }
 
         // Parse all of the CS sources
-        foreach(var source in _csSources) {
+        foreach (var source in _csSources) {
             builder.ParseCSharp(source);
         }
 
-        // Prep the Razor engine
-        var razorEngine = RazorProjectEngine.Create(
-            RazorConfiguration.Default,
-            RazorProjectFileSystem.Create(SourceDir),
-            builder => {
-                //builder.SetRootNamespace("RootNamespace"); // Namespace prefix
-                builder.SetNamespace("HooDoo");       // Can be overridden by @namespace
-                builder.ConfigureClass((document, node) => {
-                    node.BaseType = "RazorTemplate";  // This can be overridden by the @inherits directive
-                    node.ClassName = "Template";      // This could be derived from the filename by using document.Source.FilePath;
-                });
-                CustomRazorDirectives.AddToRazorProject(builder);
-                // The following will add a new directive to be parsed (e.g. @mydirective Go). But making The directive do anything is a different task.
-                // builder.AddDirective(DirectiveDescriptor.CreateSingleLineDirective("mydirective", b => b.AddMemberToken("memberTokenName", "memberTokenDescription")));
-            });
-
-        // Create the _lowered directory if needed
-        var loweredDir = string.Empty;
-        if (Lowering) {
-            loweredDir = Path.Combine(SourceDir, c_loweredDirectory);
-            // Does nothing if the directory already exists
-            Directory.CreateDirectory(loweredDir);
-        }
-
-        // Convert and parse all of the Razor sources
-        foreach (var page in _pages) {
-            var item = razorEngine.FileSystem.GetItem(page.Src, FileKinds.Legacy); // Alternative is FileKinds.Component which does not support the MVC extensions
-            // TODO: Gracefully degrade if a file is not found.
-            if (!item.Exists)
-                throw new FileNotFoundException("File not found in RazorProjectFileSystem", page.Src);
-            var doc = razorEngine.Process(item);
-
-            // Get directives
-            Console.WriteLine();
-            foreach (var datum in CustomRazorDirectives.GetCustomData(doc)) {
-                Console.WriteLine($"  CustomData: name={datum.Key} value={datum.Value}");
-            }
-            Console.WriteLine();
-
-            var razorDoc = doc.GetDocumentIntermediateNode();
-            if (razorDoc.HasDiagnostics) {
-                Console.WriteLine("RazorDoc.Diagnostics");
-                foreach (RazorDiagnostic? diag in razorDoc.Diagnostics) {
-                    Console.WriteLine(diag.ToString());
-                }
-            }
-
-            var csDoc = doc.GetCSharpDocument();
-            if (csDoc.Diagnostics.Count > 0) {
-                Console.WriteLine("csDoc.Diagnostics");
-                foreach (var diag in csDoc.Diagnostics) {
-                    Console.WriteLine(diag.ToString());
-                    Console.WriteLine(diag.ToCompilerDiagnostic(SourceDir).ToString());
-                    //Console.WriteLine($"Diag: LineIndex={diag.Span.LineIndex} CharacterIndex={diag.Span.CharacterIndex}-{diag.Span.EndCharacterIndex} AbsoluteIndex={diag.Span.AbsoluteIndex}");
-                }
-            }
-
-            if (Lowering) {
-                using var writer = new StreamWriter(PathTool.GetAbsolutePath(loweredDir, PathTool.ChangeExtension(page.Dst, ".cs")));
-                writer.Write(doc.GetCSharpDocument().GeneratedCode);
-            }
-
-            // TODO: Add to compilation.
-        }
+        // Parse all of the Razor sources
+        ParseRazorSources(builder);
 
         // Add default config if no default entry point
         // TODO: Have a test case that uses a Main function instead of top-level statements
@@ -287,4 +234,80 @@ internal class SiteBuilder {
         if (Verbosity >= VerbosityLevel.Default)
             Console.WriteLine($"Build completed in {stopwatch.ElapsedMilliseconds:N0}ms.");
     }
+
+    private void ParseRazorSources(AssemblyBuilder builder) {
+
+        // Prep the Razor engine
+        var razorEngine = RazorProjectEngine.Create(
+            RazorConfiguration.Default,
+            RazorProjectFileSystem.Create(SourceDir),
+            builder => {
+                builder.SetRootNamespace("BBollard"); // Namespace prefix
+                //builder.SetNamespace("HooDoo");       // Can be overridden by @namespace
+                //builder.ConfigureClass((document, node) => {
+                //    node.BaseType = "RazorTemplate";  // This can be overridden by the @inherits directive
+                //    node.ClassName = "Template";      // This could be derived from the filename by using document.Source.FilePath;
+                //});
+                CustomRazorDirectives.AddToRazorProject(builder);
+                // The following will add a new directive to be parsed (e.g. @mydirective Go). But making The directive do anything is a different task.
+                // builder.AddDirective(DirectiveDescriptor.CreateSingleLineDirective("mydirective", b => b.AddMemberToken("memberTokenName", "memberTokenDescription")));
+            });
+
+        // Create the _lowered directory if needed
+        var loweredDir = string.Empty;
+        if (Lowering) {
+            loweredDir = Path.Combine(SourceDir, c_loweredDirectory);
+            // Does nothing if the directory already exists
+            Directory.CreateDirectory(loweredDir);
+        }
+
+        // Convert and parse all of the Razor sources
+        foreach (var page in _pages) {
+            var item = razorEngine.FileSystem.GetItem(page.Src, FileKinds.Legacy); // Alternative is FileKinds.Component which does not support the MVC extensions
+            if (!item.Exists) {
+                _diagnostics.Add(Diagnostic.Create(c_diagSourceFileNotFound, CompilerHelp.CreateLocation(page.Src), page.Src));
+                continue;
+            }
+            var doc = razorEngine.Process(item);
+
+            // Get directives
+            Console.WriteLine();
+            foreach (var datum in CustomRazorDirectives.GetCustomData(doc)) {
+                Console.WriteLine($"  CustomData: name={datum.Key} value={datum.Value}");
+            }
+            Console.WriteLine($"=== Class: {CustomRazorDirectives.GetClassFullName(doc)}");
+            Console.WriteLine();
+
+            var csDoc = doc.GetCSharpDocument();
+
+            // Aggregate diagnostics
+            var worstDiagnostic = DiagnosticSeverity.Hidden;
+            foreach (RazorDiagnostic? diag in csDoc.Diagnostics) {
+                var ddiag = builder.ToCompilerDiagnostic(diag);
+                _diagnostics.Add(ddiag);
+                if (worstDiagnostic < ddiag.Severity)
+                    worstDiagnostic = ddiag.Severity;
+            }
+
+            // Export lowered version if requested
+            if (Lowering) {
+                var filename = PathTool.GetAbsolutePath(loweredDir, PathTool.ChangeExtension(page.Dst, ".cs"));
+                var dir = Path.GetDirectoryName(filename)!;
+                if (dir.Length > loweredDir.Length)
+                    Directory.CreateDirectory(dir);
+                using var writer = new StreamWriter(PathTool.GetAbsolutePath(loweredDir, PathTool.ChangeExtension(page.Dst, ".cs")));
+                writer.Write(doc.GetCSharpDocument().GeneratedCode);
+            }
+
+            // If error, skip to the next
+            if (worstDiagnostic >= DiagnosticSeverity.Error) {
+                continue;
+            }
+
+            // Add to the set of code to be compiled
+            builder.ParseCSharpString(csDoc.GeneratedCode, builder.GetDiagnosticPath(page.Src));
+
+        }
+    }
+
 }

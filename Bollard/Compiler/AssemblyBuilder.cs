@@ -4,6 +4,7 @@ using System;
 using System.Collections.Immutable;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -170,12 +171,23 @@ internal class AssemblyBuilder {
         return _successLevel;
     }
 
-    private string GetDiagnosticPath(string path) {
+    public string GetDiagnosticPath(string path) {
         path = Path.GetFullPath(path);
         if (path.StartsWith(_sourceDir)) {
             return path.Substring(_sourceDir.Length);
         }
         return path;
+    }
+
+    public Diagnostic ToCompilerDiagnostic(RazorDiagnostic diag) {
+        string filePath = GetDiagnosticPath(diag.Span.FilePath);
+        // The integer values between RazorDiagnosticSeverity and Microsoft.CodeAnalysis.DiagnosticSeverity are equivalent
+        var descriptor = new DiagnosticDescriptor(diag.Id, "Razor " + diag.Id, "{0}", "Razor", (DiagnosticSeverity)(int)diag.Severity, true);
+        var textSpan = new TextSpan(diag.Span.AbsoluteIndex, 0);
+        var linePositionSpan = new LinePositionSpan(new LinePosition(diag.Span.LineIndex, diag.Span.CharacterIndex),
+            new LinePosition(diag.Span.LineIndex, Math.Max(diag.Span.CharacterIndex, diag.Span.EndCharacterIndex)));
+        var location = Location.Create(filePath, textSpan, linePositionSpan);
+        return Diagnostic.Create(descriptor, location, diag.GetMessage());
     }
 
 #if false
