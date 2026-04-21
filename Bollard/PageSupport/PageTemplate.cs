@@ -5,6 +5,6 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Bollard;
-public class PageTemplate : RazorTemplate {
+public abstract class PageTemplate : RazorTemplate {
 
 }

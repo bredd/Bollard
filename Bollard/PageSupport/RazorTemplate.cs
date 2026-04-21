@@ -11,11 +11,17 @@ namespace Bollard;
 /// </summary>
 public abstract class RazorTemplate {
 
+    #region Entry Point
+
+    public abstract Task ExecuteAsync();
+
+    #endregion Entry Point
+
     #region Available to Razor
 
     // HTML.Raw
 
-    #endregion
+    #endregion Available to Razor
 
     #region Called by Razor
 

@@ -33,7 +33,7 @@ internal class RazorCustomizations {
 
     const string c_pageDirectiveName = "page";
     const string c_layoutDirectiveName = "layout";
-    const string c_namespaceDirectiveName = "namespace";
+    const string c_defaultBaseClass = "Bollard.PageTemplate";
 
     // The descriptor tells the parser what this is.
     private static readonly DirectiveDescriptor c_pageDirective =
@@ -83,6 +83,7 @@ internal class RazorCustomizations {
             var filePath = codeDocument.Source.FilePath;
 
             classNode.ClassName = PathTool.SanitizeToCSharpName(Path.GetFileNameWithoutExtension(filePath));
+            classNode.BaseType = c_defaultBaseClass;
             string ns;
             if (codeDocument.TryComputeNamespace(true, out ns)) {
                 namespaceNode.Content = ns;
