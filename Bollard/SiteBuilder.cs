@@ -158,7 +158,7 @@ internal class SiteBuilder {
         builder.SourceDir = SourceDir;
 
         // Reference self
-        builder.AddAssemblyReference(typeof(Bollard.Bridge).Assembly.Location);
+        AssemblyReferenceManager.Instance.Add(typeof(Bollard.Bridge).Assembly.Location);
 
         // Add the common code
         {
@@ -252,7 +252,7 @@ internal class SiteBuilder {
         stopwatch.Start();
 
         // Find each assetbuilder that should be run
-        var assetBuilders = new List<RazorTemplate>();
+        var assetBuilders = new List<IAssetBuilder>();
         foreach (var className in _buildAssets) {
             var classType = _assembly.GetType(className, false);
             if (classType is null) {
@@ -260,17 +260,10 @@ internal class SiteBuilder {
                 continue;
             }
 
-            var obj = Activator.CreateInstance(classType);
-            RazorTemplate? assetBuilder = obj as RazorTemplate;
+            IAssetBuilder? assetBuilder = Activator.CreateInstance(classType) as IAssetBuilder;
 
             if (assetBuilder is null) {
-                var alc1 = AssemblyLoadContext.GetLoadContext(obj.GetType().Assembly);
-                var alc2 = AssemblyLoadContext.GetLoadContext(typeof(RazorTemplate).Assembly);
-
-                Console.WriteLine(alc1.Name);
-                Console.WriteLine(alc2.Name);
-
-                Console.WriteLine($"Error: Class {className} is not RazorTemplate");
+                Console.WriteLine($"Error: Class {className} is not IAssetBuilder");
                 continue;
             }
             assetBuilders.Add(assetBuilder);

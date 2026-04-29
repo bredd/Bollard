@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Immutable;
+using System.Net.Http.Headers;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.RegularExpressions;
@@ -26,8 +27,6 @@ internal class AssemblyBuilder {
         optimizationLevel: OptimizationLevel.Release
         );
 
-    static readonly char[] c_slashes = { '/', '\\' };
-
     static string[] c_defaultRefs = [
         "System.Runtime.dll",
         "System.Console.dll",
@@ -37,15 +36,9 @@ internal class AssemblyBuilder {
         "System.Web.HttpUtility.dll" // Includes System.Web.HttpUtility
     ];
 
-    static readonly string? c_referenceAssemblyDirectory = GetReferenceAssemblyDirectory();
-    static readonly string c_localAssemblyDirectory = AppContext.BaseDirectory;
-
     string _sourceDir = string.Empty; // For shortening the path on diagnostic locations.
     List<Diagnostic> _localDiagnostics = new List<Diagnostic>();
     List<SyntaxTree> _trees = new List<SyntaxTree>();
-    List<MetadataReference> _assemblyRefs = new List<MetadataReference>();
-    HashSet<string> _assemblyRefSeen = new HashSet<string>();
-    Dictionary<string, string> _assemblyRefMap = new Dictionary<string, string>();
     ImmutableArray<Diagnostic> _diagnostics = ImmutableArray<Diagnostic>.Empty;
     DiagnosticSeverity _successLevel = DiagnosticSeverity.Hidden;
     Assembly? _assembly;
@@ -62,8 +55,11 @@ internal class AssemblyBuilder {
 
     public AssemblyBuilder() {
         // Add the core library and the default references
+        var arm = AssemblyReferenceManager.Instance;
         foreach(var name in c_defaultRefs) {
-            AddAssemblyReference(name);
+            if (!arm.Add(name)) {
+                throw new InvalidOperationException("Failed to load default assembly: " + name);
+            }
         }
     }
 
@@ -102,7 +98,11 @@ internal class AssemblyBuilder {
 
                 var location = trivia.GetLocation();
                 var sourcePath = Path.Combine(_sourceDir, location.SourceTree?.FilePath ?? string.Empty);
-                AddAssemblyReference(match.Groups[1].Value, sourcePath, trivia.GetLocation());
+                var assemblyName = match.Groups[1].Value;
+                if (!AssemblyReferenceManager.Instance.Add(assemblyName, sourcePath, trivia.GetLocation())) {
+                    var hint = assemblyName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? string.Empty : " (Usually it should have a .dll extension.)";
+                    _localDiagnostics.Add(Diagnostic.Create(c_diagAssemblyNotFound, location, assemblyName, hint));
+                }
                 replaceTrivia.Add(trivia);
             }
 
@@ -145,17 +145,12 @@ internal class AssemblyBuilder {
     public DiagnosticSeverity BuildAssembly() {
         ProcessCustomizations();
 
-        var compilation = CSharpCompilation.Create("BollardAssembly", _trees, _assemblyRefs, c_compOptions);
+        var compilation = CSharpCompilation.Create("BollardAssembly", _trees, AssemblyReferenceManager.Instance.MetadataReferences, c_compOptions);
         using var ms = new MemoryStream();
         var result = compilation.Emit(ms);
         if (result.Success) {
-            var alc = AssemblyLoadContext.Default;
-
-            // To load the compiled assembly, it needs to be able to resolve other assembly references.
-            alc.Resolving += Alc_ResolveAssembly;
             ms.Position = 0;
-            _assembly = alc.LoadFromStream(ms);
-            //alc.Resolving -= Alc_ResolveAssembly;
+            _assembly = AssemblyLoadContext.Default.LoadFromStream(ms);
         }
         _diagnostics = ImmutableArray<Diagnostic>.Empty.AddRange(result.Diagnostics).AddRange(_localDiagnostics);
         _successLevel = _diagnostics.MaxBy(d => d.Severity)?.Severity ?? DiagnosticSeverity.Hidden;
@@ -183,133 +178,6 @@ internal class AssemblyBuilder {
             new LinePosition(diag.Span.LineIndex, Math.Max(diag.Span.CharacterIndex, diag.Span.EndCharacterIndex)));
         var location = Location.Create(filePath, textSpan, linePositionSpan);
         return Diagnostic.Create(descriptor, location, diag.GetMessage());
-    }
-
-#if false
-    /// <summary>
-    /// Add a reference from a type. Translates from the runtime path (in type.Assembly.Location) to the reference path.
-    /// </summary>
-    /// <param name="type">Type to be referenced</param>
-    /// <remarks>
-    /// Due to deduplication in AddReference using multiple types from the same assembly doesn't cost much.
-    /// </remarks>
-    private void AddReference(Type type) {
-        // Translates from runtime path to reference path
-        if (!AddReference(Path.GetFileName(type.Assembly.Location))) {
-            Console.WriteLine($"Not mapped: {type.FullName} -> {type.Assembly.Location}");
-        }
-        else {
-            Console.WriteLine($"Mapped: {type.FullName} -> {Path.GetFileName(type.Assembly.Location)}");
-        }
-    }
-#endif
-
-    public bool AddAssemblyReference(string assemblyName, string? referencingPath = null, Location? location = null) {
-        string? assemblyPath = null;
-        bool isReferenceAssembly = false;
-
-        // If the path is not absolute, find the assmbly
-        if (Path.IsPathFullyQualified(assemblyName)) {
-            assemblyPath = Path.Exists(assemblyName) ? assemblyName : null;
-        }
-        else {
-            // If a relative path to the assembly is given, it must be located as specified relative to the referencing file
-            if (assemblyName.IndexOfAny(c_slashes) >= 0) {
-                if (referencingPath is null) {
-                    throw new InvalidOperationException("Internal error: referencingPath should be specified when an assembly with a path is referenced.");
-                }
-                assemblyPath = Path.Combine(Path.GetFileName(referencingPath), assemblyName);
-            }
-
-            // Try the reference assembly directory
-            if (assemblyPath is null && c_referenceAssemblyDirectory is not null) {
-                assemblyPath = Path.Combine(c_referenceAssemblyDirectory, assemblyName);
-                if (File.Exists(assemblyPath)) {
-                    isReferenceAssembly = true;
-                }
-                else {
-                    assemblyPath = null;
-                }
-            }
-
-            // Try the local assembly directory (where the base executable is located)
-            if (assemblyPath is null) {
-                assemblyPath = Path.Combine(c_localAssemblyDirectory, assemblyName);
-                if (!File.Exists(assemblyPath)) {
-                    assemblyPath = null;
-                }
-            }
-        }
-
-        // Report if not found
-        if (assemblyPath is null) {
-            var hint = assemblyName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? string.Empty : " (Usually it should have a .dll extension.)";
-            _localDiagnostics.Add(Diagnostic.Create(c_diagAssemblyNotFound, location, assemblyName, hint));
-            return false;
-        }
-
-        var abyName = AssemblyName.GetAssemblyName(assemblyPath);
-        if (_assemblyRefSeen.Add(abyName.FullName)) {
-            _assemblyRefs.Add(MetadataReference.CreateFromFile(assemblyPath));
-            if (!isReferenceAssembly) {
-                _assemblyRefMap[abyName.FullName] = assemblyPath;
-            }
-        }
-        return true;
-    }
-
-    /// <summary>
-    /// Getting the path to the reference assembly directory is surprisingly complicated.
-    /// That's because the path you get easily is to the runtime assemblies which may be stripped.
-    /// It's also because the reference assemblies only have two parts to their version numbers.
-    /// </summary>
-    /// <returns>The reference assembly path or null.</returns>
-    /// <remarks>
-    /// Null may be returned if the application is packaged as single-file or NativeAOT.
-    /// The contents may be enumerated to get a list of all possible assemblies.
-    /// </remarks>
-    private static string? GetReferenceAssemblyDirectory() {
-        string? deps = (string?)AppContext.GetData("FX_DEPS_FILE");
-        if (deps is null) return null;
-
-        // Extract the runtime version (e.g., 8.0.2)
-        var runtimeDir = Path.GetDirectoryName(deps)!;
-        var version = Path.GetFileName(runtimeDir)!;
-        var versionParts = version.Split('.');
-
-        // Go all the way to the dotNetRoot (typical runtimeDir is C:\Program Files\dotnet\shared\MicrosoftNETCore.App\8.0.25)
-        var dotnetRoot = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(runtimeDir)));
-        if (dotnetRoot is null) return null;
-
-        // Assemble the new dir. Typical is C:\Program Files\dotnet\Microsoft.NETCore.App.Ref\8.0.25\ref\net8.0
-        var assemblyDir = Path.Combine(dotnetRoot, "packs", "Microsoft.NETCore.App.Ref", version, "ref", $"net{versionParts[0]}.{versionParts[1]}");
-
-        return Path.Exists(assemblyDir) ? assemblyDir : null;
-    }
-
-    // Event handler for AssemblyLoadContext.Resolving
-    private Assembly? Alc_ResolveAssembly(AssemblyLoadContext alc, AssemblyName assemblyName) {
-        Console.WriteLine($"===== Resolving Assembly `{assemblyName.FullName}`");
-        if (_assemblyRefMap.TryGetValue(assemblyName.FullName, out string? path)) {
-            return alc.LoadFromAssemblyPath(path);
-        }
-        return null;
-    }
-
-    class LoadContext: System.Runtime.Loader.AssemblyLoadContext {
-        Dictionary<string, string> _assemblyRefMap;
-
-        public LoadContext(Dictionary<string, string> assemblyRefMap) {
-            _assemblyRefMap = assemblyRefMap;
-        }
-
-        protected override Assembly? Load(AssemblyName assemblyName) {
-            Console.WriteLine("Attempting to load: " + assemblyName);
-            if (_assemblyRefMap.TryGetValue(assemblyName.FullName, out var path)) {
-                return LoadFromAssemblyPath(path);
-            }
-            return base.Load(assemblyName);
-        }
     }
 
 }
