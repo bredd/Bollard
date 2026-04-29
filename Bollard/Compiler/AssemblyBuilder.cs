@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.CodeAnalysis;
@@ -148,9 +149,13 @@ internal class AssemblyBuilder {
         using var ms = new MemoryStream();
         var result = compilation.Emit(ms);
         if (result.Success) {
+            var alc = AssemblyLoadContext.Default;
+
+            // To load the compiled assembly, it needs to be able to resolve other assembly references.
+            alc.Resolving += Alc_ResolveAssembly;
             ms.Position = 0;
-            var loadContext = new LoadContext(_assemblyRefMap);
-            _assembly = loadContext.LoadFromStream(ms);
+            _assembly = alc.LoadFromStream(ms);
+            //alc.Resolving -= Alc_ResolveAssembly;
         }
         _diagnostics = ImmutableArray<Diagnostic>.Empty.AddRange(result.Diagnostics).AddRange(_localDiagnostics);
         _successLevel = _diagnostics.MaxBy(d => d.Severity)?.Severity ?? DiagnosticSeverity.Hidden;
@@ -160,16 +165,6 @@ internal class AssemblyBuilder {
     public DiagnosticSeverity SuccessLevel => _successLevel;
     public ImmutableArray<Diagnostic> Diagnostics => _diagnostics;
     public Assembly? Assembly => _assembly;
-
-    public DiagnosticSeverity ReportDiagnostics(TextWriter? writer = null, DiagnosticSeverity minSeverity = DiagnosticSeverity.Warning) {
-        if (writer is null) writer = Console.Out;
-        foreach (var diagnostic in _diagnostics) {
-            if (diagnostic.Severity >= minSeverity) {
-                writer.WriteLine(diagnostic.ToString());
-            }
-        }
-        return _successLevel;
-    }
 
     public string GetDiagnosticPath(string path) {
         path = Path.GetFullPath(path);
@@ -290,6 +285,15 @@ internal class AssemblyBuilder {
         var assemblyDir = Path.Combine(dotnetRoot, "packs", "Microsoft.NETCore.App.Ref", version, "ref", $"net{versionParts[0]}.{versionParts[1]}");
 
         return Path.Exists(assemblyDir) ? assemblyDir : null;
+    }
+
+    // Event handler for AssemblyLoadContext.Resolving
+    private Assembly? Alc_ResolveAssembly(AssemblyLoadContext alc, AssemblyName assemblyName) {
+        Console.WriteLine($"===== Resolving Assembly `{assemblyName.FullName}`");
+        if (_assemblyRefMap.TryGetValue(assemblyName.FullName, out string? path)) {
+            return alc.LoadFromAssemblyPath(path);
+        }
+        return null;
     }
 
     class LoadContext: System.Runtime.Loader.AssemblyLoadContext {

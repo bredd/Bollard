@@ -33,7 +33,9 @@ internal class RazorCustomizations {
 
     const string c_pageDirectiveName = "page";
     const string c_layoutDirectiveName = "layout";
-    const string c_defaultBaseClass = "Bollard.PageTemplate";
+    const string c_defaultBaseClass = "Bollard.HtmlTemplate";
+
+    static readonly char[] c_directorySeparatorChars = { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
 
     // The descriptor tells the parser what this is.
     private static readonly DirectiveDescriptor c_pageDirective =
@@ -68,8 +70,6 @@ internal class RazorCustomizations {
     }
 
     private class CustomClassNamePass : IRazorDocumentClassifierPass {
-        static char[] s_directorySeparators = { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
-
         public int Order => 1001; // Run after built-in passes
 
         public RazorEngine? Engine { get; set; }
@@ -80,14 +80,25 @@ internal class RazorCustomizations {
             Debug.Assert(classNode is not null && namespaceNode is not null);
             if (classNode is null || namespaceNode is null) return;
 
-            var filePath = codeDocument.Source.FilePath;
+            var filePath = codeDocument.Source.RelativePath ?? codeDocument.Source.FilePath;
 
+            // Customize the class name
             classNode.ClassName = PathTool.SanitizeToCSharpName(Path.GetFileNameWithoutExtension(filePath));
             classNode.BaseType = c_defaultBaseClass;
             string ns;
             if (codeDocument.TryComputeNamespace(true, out ns)) {
                 namespaceNode.Content = ns;
             }
+
+            // Record the source filename
+            classNode.Children.Add(new CSharpCodeIntermediateNode {
+                Children = {
+                    new IntermediateToken {
+                        Kind = TokenKind.CSharp,
+                        Content = string.Concat("protected override string SourceName => @\"", filePath.Replace("\"", "\"\""), "\";")
+                    }
+                }
+            });
         }
     }
 
@@ -231,6 +242,23 @@ internal class RazorCustomizations {
         }
 
         return data;
+    }
+
+    public static bool ShouldRegisterToRun(RazorCodeDocument doc) {
+        // TODO: Update this to work exclusively with data left by the document classification pass.
+        foreach (var node in doc.GetDocumentIntermediateNode().Children) {
+            if (node is CustomDataNode din && din.Name == "page") {
+                return din.Value != "none";
+            }
+        }
+
+        // Default: does an underscore appear in the path
+        foreach(var part in doc.Source.RelativePath.Split(c_directorySeparatorChars, StringSplitOptions.RemoveEmptyEntries|StringSplitOptions.TrimEntries)) {
+            if (part[0] == '_')
+                return false;
+        }
+
+        return true;
     }
 
     public static string GetClassFullName(RazorCodeDocument doc) {

@@ -5,6 +5,9 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Bollard;
-public abstract class PageTemplate : RazorTemplate {
+public abstract class HtmlTemplate : RazorTemplate {
+
+    // HTML.Raw
+
 
 }

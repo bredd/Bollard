@@ -72,12 +72,9 @@ var siteBuilder = new SiteBuilder(source) {
     SiteArgs = siteArgs
 };
 
-var successLevel = siteBuilder.Build();
-if (successLevel >= DiagnosticSeverity.Error) {
-    Console.WriteLine("Errors in the build. Exiting.");
-    return -1;
-}
-siteBuilder.Run();
+var successLevel = siteBuilder.Compile();
+siteBuilder.ReportDiagnostics(minSeverity: DiagnosticSeverity.Hidden);
+siteBuilder.Run(); // For now, even if there were errors
 return 0;
 
 // Parse the command line

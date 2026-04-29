@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
+using System.Runtime.Loader;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Razor.Language;
@@ -47,7 +48,8 @@ internal class SiteBuilder {
     List<Diagnostic> _diagnostics = new List<Diagnostic>();
     List<Copy> _copies = new List<Copy>();
     List<string> _csSources = new List<string>();
-    List<Page> _pages = new List<Page>();
+    List<string> _razorSources = new List<string>();
+    List<string> _buildAssets = new List<string>(); // A list of class names to be built by default
     Assembly? _assembly;
 
     public SiteBuilder(string source) {
@@ -87,7 +89,7 @@ internal class SiteBuilder {
     /// </summary>
     public string? SourceFile { get; private set; }
 
-    public DiagnosticSeverity BuildSuccessLevel { get; private set; }
+    public DiagnosticSeverity CompileSuccessLevel { get; private set; }
 
     private void LoadVerbatimDir(DirectoryInfo di) {
         foreach (var fi in di.EnumerateFiles("*", c_verbatimEnumOptions)) {
@@ -106,9 +108,8 @@ internal class SiteBuilder {
 
         case ".cshtml":
         case ".razor":
-        case ".csmd":
         case ".md":
-            _pages.Add(new Page(fi.FullName, PathTool.GetLocalPath(fi.FullName, SourceDir)));
+            _razorSources.Add(fi.FullName);
             return true;
 
         default:
@@ -181,13 +182,13 @@ internal class SiteBuilder {
             builder.ParseCSharpString(c_defaultConfig, "_defaultConfig.cs");
         }
 
-        BuildSuccessLevel = builder.BuildAssembly();
-        builder.ReportDiagnostics(minSeverity: DiagnosticLevel);
+        builder.BuildAssembly();
 
+        _diagnostics.AddRange(builder.Diagnostics);
         _assembly = builder.Assembly;
     }
 
-    public DiagnosticSeverity Build() {
+    public DiagnosticSeverity Compile() {
         var stopwatch = new Stopwatch();
         stopwatch.Start();
 
@@ -217,7 +218,30 @@ internal class SiteBuilder {
         if (Verbosity >= VerbosityLevel.Default)
             Console.WriteLine($"Compiled in {stopwatch.ElapsedMilliseconds:N0}ms.");
 
-        return BuildSuccessLevel;
+        // Check success level
+        var successLevel = DiagnosticSeverity.Hidden;
+        foreach (var diagnostic in _diagnostics) {
+            if (successLevel < diagnostic.Severity) {
+                successLevel = diagnostic.Severity;
+            }
+        }
+        CompileSuccessLevel = successLevel;
+        return successLevel;
+    }
+
+    public DiagnosticSeverity ReportDiagnostics(TextWriter? writer = null, DiagnosticSeverity minSeverity = DiagnosticSeverity.Warning) {
+        if (writer is null)
+            writer = Console.Out;
+        var successLevel = DiagnosticSeverity.Hidden;
+        foreach (var diagnostic in _diagnostics) {
+            if (diagnostic.Severity >= minSeverity) {
+                writer.WriteLine(diagnostic.ToString());
+            }
+            if (successLevel < diagnostic.Severity) {
+                successLevel = diagnostic.Severity;
+            }
+        }
+        return successLevel;
     }
 
     public void Run() {
@@ -227,13 +251,62 @@ internal class SiteBuilder {
         var stopwatch = new Stopwatch();
         stopwatch.Start();
 
+        // Find each assetbuilder that should be run
+        var assetBuilders = new List<RazorTemplate>();
+        foreach (var className in _buildAssets) {
+            var classType = _assembly.GetType(className, false);
+            if (classType is null) {
+                Console.WriteLine($"Error: Failed to find class {classType}.");
+                continue;
+            }
+
+            var obj = Activator.CreateInstance(classType);
+            RazorTemplate? assetBuilder = obj as RazorTemplate;
+
+            if (assetBuilder is null) {
+                var alc1 = AssemblyLoadContext.GetLoadContext(obj.GetType().Assembly);
+                var alc2 = AssemblyLoadContext.GetLoadContext(typeof(RazorTemplate).Assembly);
+
+                Console.WriteLine(alc1.Name);
+                Console.WriteLine(alc2.Name);
+
+                Console.WriteLine($"Error: Class {className} is not RazorTemplate");
+                continue;
+            }
+            assetBuilders.Add(assetBuilder);
+        }
+
+        // TODO: Clean this up.
+        var destDir = Path.Combine(SourceDir, "_site");
+        Directory.CreateDirectory(destDir);
+
         // Invoke the assembly entrypoint to update the configuration.
         // TODO: Command-line argument passthrough to the entrypoint.
+        // TODO: Add assetbuilders list to the locals that the entrypoint can manipulate.
+        // TODO: Let entrypoint change the destination directory.
         _assembly.EntryPoint!.Invoke(null, new object?[] { Array.Empty<string>() });
+
+        foreach (var assetBuilder in assetBuilders) {
+            var razorTemplate = assetBuilder as RazorTemplate;
+            if (razorTemplate is null) {
+                Console.WriteLine("Error: Only razorTemplate classes supported so far.");
+                // TODO: Determine how paths are handled for other template types. Perhaps Path becomes a part of IAssetBuilder.
+                continue;
+            }
+
+            // TODO: Set parameters such as site that the assetBuilder should be able to access
+            razorTemplate.Path = razorTemplate.GetType().FullName + ".html";
+
+            assetBuilder.Produce();
+
+            using (var stream = File.Create(PathTool.GetAbsolutePath(destDir, razorTemplate.Path))) {
+                assetBuilder.Deliver(stream);
+            }
+        }
 
         stopwatch.Stop();
         if (Verbosity >= VerbosityLevel.Default)
-            Console.WriteLine($"Build completed in {stopwatch.ElapsedMilliseconds:N0}ms.");
+            Console.WriteLine($"Site built in {stopwatch.ElapsedMilliseconds:N0}ms.");
     }
 
     private void ParseRazorSources(AssemblyBuilder builder) {
@@ -256,22 +329,13 @@ internal class SiteBuilder {
         }
 
         // Convert and parse all of the Razor sources
-        foreach (var page in _pages) {
-            var item = razorEngine.FileSystem.GetItem(page.Src, FileKinds.Legacy); // Alternative is FileKinds.Component which does not support the MVC extensions
+        foreach (var filename in _razorSources) {
+            var item = razorEngine.FileSystem.GetItem(filename, FileKinds.Legacy); // Alternative is FileKinds.Component which does not support the MVC extensions
             if (!item.Exists) {
-                _diagnostics.Add(Diagnostic.Create(c_diagSourceFileNotFound, CompilerHelp.CreateLocation(page.Src), page.Src));
+                _diagnostics.Add(Diagnostic.Create(c_diagSourceFileNotFound, CompilerHelp.CreateLocation(filename), filename));
                 continue;
             }
             var doc = razorEngine.Process(item);
-
-            // Get directives
-            Console.WriteLine();
-            foreach (var datum in RazorCustomizations.GetCustomData(doc)) {
-                Console.WriteLine($"  CustomData: name={datum.Key} value={datum.Value}");
-            }
-            Console.WriteLine($"=== Class: {RazorCustomizations.GetClassFullName(doc)}");
-            Console.WriteLine();
-
             var csDoc = doc.GetCSharpDocument();
 
             // Aggregate diagnostics
@@ -285,13 +349,23 @@ internal class SiteBuilder {
 
             // Export lowered version if requested
             if (Lowering) {
-                var filename = PathTool.GetAbsolutePath(loweredDir, PathTool.ChangeExtension(page.Dst, ".cs"));
-                var dir = Path.GetDirectoryName(filename)!;
+                var loweredFilename = PathTool.GetAbsolutePath(loweredDir,
+                    PathTool.ChangeExtension(PathTool.GetLocalPath(filename, SourceDir), ".cs"));
+                var dir = Path.GetDirectoryName(loweredFilename)!;
                 if (dir.Length > loweredDir.Length)
                     Directory.CreateDirectory(dir);
-                using var writer = new StreamWriter(PathTool.GetAbsolutePath(loweredDir, PathTool.ChangeExtension(page.Dst, ".cs")));
+                using var writer = new StreamWriter(loweredFilename);
                 writer.Write(doc.GetCSharpDocument().GeneratedCode);
             }
+
+#if DEBUG
+            Console.WriteLine();
+            Console.WriteLine($"=== Class: {RazorCustomizations.GetClassFullName(doc)} worstDiagnostic={worstDiagnostic}");
+            foreach (var datum in RazorCustomizations.GetCustomData(doc)) {
+                Console.WriteLine($"  CustomData: name={datum.Key} value={datum.Value}");
+            }
+            Console.WriteLine($"  Register to run: {RazorCustomizations.ShouldRegisterToRun(doc)}");
+#endif
 
             // If error, skip to the next
             if (worstDiagnostic >= DiagnosticSeverity.Error) {
@@ -299,9 +373,20 @@ internal class SiteBuilder {
             }
 
             // Add to the set of code to be compiled
-            builder.ParseCSharpString(csDoc.GeneratedCode, builder.GetDiagnosticPath(page.Src));
+            builder.ParseCSharpString(csDoc.GeneratedCode, builder.GetDiagnosticPath(filename));
+
+            // Conditionally add to the list of classes to run
+            if (RazorCustomizations.ShouldRegisterToRun(doc)) {
+                _buildAssets.Add(RazorCustomizations.GetClassFullName(doc));
+            }
 
         }
+
+#if DEBUG
+        Console.WriteLine("=== Finished Razor Parsing");
+        Console.WriteLine();
+#endif
+
     }
 
 }

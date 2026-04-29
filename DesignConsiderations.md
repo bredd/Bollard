@@ -35,27 +35,38 @@ A directory with an underscore prefix can appear anywhere in the hierarchy. When
 Compiled files are those with these extensions.
 
 * `.cs` files: Classes are complied into the assembly. Only the top-level statements or the `main()` function (typically in the `config.cs` file) function will be executed by default. The rest are available to be called by other C# code.
-* `.cshtml` files: The file is compiled to an object that is included in the overall assembly. The default base class is `Bollard.RazorPage`.
-* `.razor` files: The file is compiled to an object that is included in the overall assembly. The default base class is `Bollard.Template`. This is the extension to use when creating non-html resources using Razor such as `.svg`.
-* `.md` files: The file is processed from Markdown to HTML and compiled into an HTML-rendering object that is included in the overall assembly. The base class is `Bollard.MarkdownPage`. The `@page` and `@layout` directives are supported but there is no processing of Razor code.
-* `.cshtml.md` files: The file is processed from Markdown to `.cshtml` and then compiled into an object. The default base class is `Bollard.RazorPage`.
-
+* `.cshtml` files: The file is compiled to an object that is included in the overall assembly.
+    * The default base class is `Bollard.RazorPage`.
+* `.razor` files: The file is compiled to an object that is included in the overall assembly.
+    * The default base class is `Bollard.RazorTemplate`.
+    * This is the extension to use when creating non-html resources using Razor such as `.svg`.
+* `.md` files: The file is processed from Markdown to HTML and then compiled with the Razor compiler as if it were a .cshtml file.
+    * The default base class is `Bollard.RazorPage`
+    * On very rare occasions an @ sign might be misinterpreted when a MarkDown file doesn't intentionally include any Razor code. However, the Razor compiler is very sensitive to the thing following @ being a valid C# expression so errors are rare. When a problem occurs, then the @ should be escaped. For example: @@DateTime.Now
 
 #### Default Registration
 Compiling a file simply includes the class in the compiled assembly. To be run, it must either be registered to run or be called by C# code somewhere else in the system. Registration to run requires indicating where the output should be stored.
 
-Classes compiled from files are registered to be run *unless* the filename begins with underscore (`_`) or a directory in its path begins with underscore. The path to the output file corresponds to the input file and the output extension is *always* `.html`. If a different location or extension is required then the `@page` directive should be used.
+Files with a `.cshtml` extension automatically registered *unless* the filename begins with underscore (`_`) or a directory in its path begins with underscore. Automatic registration is as if the file has a bare `@page` directive (see below). This means that the default base class is also set to `HtmlPage`. If the file has an actual `@page` or `@asset` directive then the directive overrides automatic registration.
 
-#### Registration to be run with the @page directive
+#### Registration to be run with the @page or @asset directive
 Compiling a file simply includes the class in the compiled assembly. To be run, it must either be registered to run or be called by C# code somewhere else in the system. Registration to run includes indicating where the output should be stored.
 
-The `@page` directive indicates that a file should be run (or not be run). When it is not present, then default behavior takes over.
-
-* `@page`: A bare `@page` directive registers the class built from the file to be run. The output file will be the path in the output directory that corresponds to the location of the input file but with a `.html` extension.
-* `@page "<path>"`: The path in an `@page` directive indicates the destination filename and optional directory path relative within the output directory.
-    * If a directory path is specified, it should use forward slashes. A leading slash indicates a path relative to the base output directory. Without leading slash it is relative to the directory corresponding to the location of the input file.
+* `@page`: A bare `@page` directive sets the default base class to `HtmlTemplate` and registers the class built from the file to be run.
+    * The output file will be the path in the output directory that corresponds to the location of the input file but with a `.html` extension.
+* `@page "<path>"`: Sets the default base class to `HtmlTemplate` and registers the class built from the file to be run.
+    * The path indicates the path destination filename relative to the output directory. The filename extension is part of the path.
+    * Directory paths SHOULD use forward slashes.
+    A leading slash indicates a path relative to the base output directory. Without leading slash it is relative to the directory corresponding to the location of the input file.
     * If the value is strictly an extension (e.g. `@page ".svg"`) then the directory path and filename will be the same as the input but the extension will be changed. To create a file that begins with a dot (period) you must provide a directory path as well.
-* `@page none`: With no quotes, the `@page none` directive indicates that the class should be compiled and made available to be called but it is not registered to be run.
+* `@page "none"`: (Quotes are required). Sets the default base class to `HtmlTemplate` but does not register the class built from the file to be run. If, for some *wack* reason you need to create an output called "none" with no extension use `@page ".\none"`.
+* `@asset`: Sets the default base class to `RazorTemplate` and registers the class built from the file to be run.
+    * The output file will be the path in the output directory that corresponds to the location of the input file but with the (final) extension stripped. Thus "example.json.razor" will result in a file called "example.json".
+* `@asset "<path>"`: Sets the default base class to `RazorTemplate` and registers the class built from the file to be run.
+    * Path treatment is the same as with `@page`.
+    * Thus, `@page` and `@asset` are the same except for the base class.
+
+**Important**: Regardless of the value that appears in the directive, Razor code can set `Path` to a new value which will override any prior setting.
 
 ### Layouts
 
@@ -92,6 +103,14 @@ More to come here.
 
 
 ## Future Feature Notes
+
+## Feature Backlog
+* Set current culture
+    * In config.cs this should work: `CultureInfo.DefaultThreadCurrentCulture = cultureInfo; + CultureInfo.` `CultureInfo.DefaultThreadCurrentUICulture = cultureInfo;`
+    * However, a helper function may be appropriate.
+    * Also, determine whether the default should be InvariantCulture rather than the OS setting.
+    * Also, support page-scope culture changes.
+
 
 
 
