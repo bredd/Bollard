@@ -1,5 +1,9 @@
 @page "something"
 @layout "Phred"
+@{
+    string customAttr = "Encode this \"<\" and this '>'";
+    string riskyInput = "<script>alert(\"Hello!\");</script>";
+}
 <html>
 <head>
     <title>Test Page</title>
@@ -8,5 +12,7 @@
     <h1>Test Page</h1>
     <p>Hello, world!</p>
     <p>@DateTime.Now</p>
+    <p customAttr="@customAttr">With a razor-generated attribute.</p>
+    <p>@riskyInput</p>
 </body>
 </html>

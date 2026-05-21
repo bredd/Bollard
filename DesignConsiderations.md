@@ -68,6 +68,46 @@ Compiling a file simply includes the class in the compiled assembly. To be run, 
 
 **Important**: Regardless of the value that appears in the directive, Razor code can set `Path` to a new value which will override any prior setting.
 
+## Implementation Notes
+
+### Finishing the basic compilation and output
+
+* Need to detect
+    * Base class
+    * ParseHtml option (whether to give special treatment to Tags and Attributes)
+    * Whether code should be registered to "run" by default or just made available
+    * These are controlled by the @assset and @baseclass directives and also by the filename extension.
+    * Look ahead, since directives control this stuff, they can be influenced by _ViewImports.cshtml
+    * Look ahead, .md may be processed either within or outside the Razor pipeline.
+
+* Need to set the RazorCodeDocument.RazorParserOptions.ParseHtml before the parsing phase.
+    * RazorCodeDocument.RazorParserOptions.ParseHtml set to true or false depending on whether HTML tags and attributes should be processed.
+    * Phases are (per CoPilot)
+        * IRazorProjectItemClassifierPhase
+        * IRazorParserOptionsPhase (finalizes parser options)
+        * IRazorSyntaxTreePhase (actually does the parsing)
+        * IR Passes
+        * C# lowering
+        * Code Generation
+    * Therefore: Register a feature that implements IRazorParserOptionsFeature
+        * (Could also create a custom phase but the feature is cleaner.)
+        * Override GetOptions(RazorCodeDocument document)
+        ```
+        var builder = new RazorParserOptionsBuilder();
+        builder.ParseHtml = true/false;
+        return builder.Build();
+        ```
+    * Passing custom data to later passes and phases
+        * Create a custom class and store it in RazorCodeDocument.Items with a custom key.
+        * Retrieve the class later to get the needed info.
+        * (Alternative is to subclass RazorParserOptions and add custom information)
+    * It can set the FileKind to influence later phases
+        * File Kinds are simply strings so you can define your own values.
+        * FileKinds.Legacy - for classic Razor Pages
+        * DocumentClassifier reads the file kind and changes settings accordingly - but this is done too late to change the parser mode.
+
+
+
 ### Layouts
 
 More to come here.
@@ -76,22 +116,52 @@ More to come here.
 
 #### _ViewImports.cshtml 
 * Documented here: https://www.learnrazorpages.com/razor-pages/files/viewimports
-* Should strictly be directives.
+    * Should strictly be directives.
+    * @using, @addTagHelper, @removeTagHelper, @inject are additive
+    * @inherits, @namespace, @model, @tagHelperPrefix override each other
+        * Only one instance of each SHOULD be in a _ViewImports.cshtml file
+    * All _ViewImports files are applied from the root of the file hierarchy to the designated file. Values in _viewImports from closer files override those from further files.
 * Options
     * call builder.SetDefaultImportFileName("_ViewImports.cshtml") and implement IRazorImportSourceProvider
     * Add MVC Razor Extensions through the right NuGet and builder.AddMvcRazorExtensions()
     * builder.Features.Add(IRazorDocumentClassifierPass) to indicate the special document classes for _ViewImports and _ViewStart
     * builder.Features.Add(new DefaultImportFeature(source))
     * Probably more. CoPilot seems to have most of the info.
+* Details (with CoPilot Help)
+    * A custom IRazorImportSourceProvider is called as a very early phase
+        * It imports the *source* of each file for later parsing (RazorProjectEngine is *not* reentrant)
+        * The source to a single parsing pass may include multiple source files, each with its own RazorCodeDocument instance and each RazorCodeDocument instance has its own feature set including its own FileKind.
+        * Each of the imported files gets its own file tree which may later be integrated into the primary parse tree.
+    * Document Classifier Phase sets _ViewImports to RazorFileKinds.Legacy
+        * If the filename is "_ViewImports.cshtml" then it calls codeDocument.SetFileKind(RazorFileKinds.Legacy).
+    * Registered ViewImportsProjectFeature
+        * Walks up the directory tree
+        * Collects all _ViewImports.cshtml files
+        * Injects their directives into the page's import phase
+        * Ignores or errors on things other than directives (This is how directives only are imported)
 
 #### _ViewStart.cshtml
+* Documented here: https://www.learnrazorpages.com/razor-pages/files/viewstart
+    * Typically composed of a single code block.
+    * Typically used to set the layout
+        ```
+        @{
+            Layout = "_Layout";
+        }
+        ```
+    * ALL _ViewStart files are run starting with the furthest to the nearest so nearer _ViewStart files can override layout settings from further ones but other settings have potential to be additive.
 * Code that is executed at the start of each Razor Page
 * Usually used simply to set the default layout (though that could also be done in the _ViewImports.cshtml file)
 * Strictly one top-level C# code block: @{ Layout = "_Layout" } plus comments, whitespace, etc.
+* Since it is code, the layout can be conditional on things like file extension.
 * Implementation
     * Register a document classifier with RazorProjectEngine
     * builder.Features.Add(IRazorDocumentClassifierPass) to indicate the special document classes for _ViewImports and _ViewStart
     * Probably more. CoPilot seems to have most of the info.
+* Details (with CoPilot Help)
+    * Document Classifier Phase sets _ViewStart to RazorFileKinds.ViewStart
+        * If the filename is "_ViewStart.cshtml" then it calls codeDocument.SetFileKind(RazorFileKinds.ViewStart)
+        * Tells the parser that it should just have one code block
 
 #### @section directive
 * Lets you produce sections that a layout will insert in the right places.

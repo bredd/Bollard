@@ -13,9 +13,13 @@ using static Bollard.RazorCustomizations;
 
 /* RazorProjectEngine phases and passes determined to date
  *   DefaultRazorParsingPhase
+ *      Outputs RazorSyntaxTree which is attached to the code document.
  *   DefaultRazorSyntaxTreePhase
+ *      May modify RazorSyntaxTree
  *   DefaultRazorTagHelperBinderPhase
- *   DefaultRazorIntermediateNodeLoweringPhase (first production of the parse tree)
+ *      May annotate the syntax tree.
+ *   DefaultRazorIntermediateNodeLoweringPhase
+ *      Outputs the DocumentIntermediateNode Tree (the parse tree operated on by the following phases)
  *   DefaultRazorDocumentClassifierPhase
  *      IRazorCSharpDocumentClassifierPass (presumably)
  *   DefaultRazorDirectiveClassifierPhase
@@ -67,6 +71,19 @@ internal class RazorCustomizations {
         public override IntermediateNodeCollection Children => IntermediateNodeCollection.ReadOnly; // Badly named but returns empty which is what we want.
         public override void Accept(IntermediateNodeVisitor visitor)
             => visitor.VisitDefault(this);
+    }
+
+    private class PreProcessPhase : IRazorEnginePhase {
+        public static void Attach(RazorProjectEngineBuilder builder) {
+            builder.Phases.Insert(1, new PreProcessPhase());
+        }
+
+        public RazorEngine? Engine { get; set; }
+
+        public void Execute(RazorCodeDocument codeDocument) {
+            Console.WriteLine("*** PreProcessPhase ***");
+
+        }
     }
 
     private class CustomClassNamePass : IRazorDocumentClassifierPass {
@@ -155,10 +172,10 @@ internal class RazorCustomizations {
     }
 
 #if DEBUG
-    public class TestPhase : IRazorEnginePhase {
+    public class TracePhase : IRazorEnginePhase {
         string _label;
 
-        public TestPhase(string label) {
+        public TracePhase(string label) {
             _label = label;
         }
 
@@ -216,20 +233,24 @@ internal class RazorCustomizations {
 
         public static void Attach(RazorProjectEngineBuilder builder) {
             for (int i = 0; i * 2 <= builder.Phases.Count; ++i) {
-                builder.Phases.Insert(i * 2, new TestPhase(i.ToString()));
+                builder.Phases.Insert(i * 2, new TracePhase(i.ToString()));
             }
         }
     }
 #endif // DEBUG
 
     public static RazorProjectEngineBuilder AddToRazorProject(RazorProjectEngineBuilder builder) {
+        PreProcessPhase.Attach(builder);
+
         // Adding directives registers them but they must be processed in the later passes or phases.
         builder.AddDirective(c_pageDirective);
         builder.AddDirective(c_layoutDirective);
+
+        // Custom passes are called within phases
         builder.Features.Add(new CustomClassNamePass());
         builder.Features.Add(new CustomDirectivesPass());
 
-        //TestPhase.Attach(builder);
+        //TracePhase.Attach(builder);
         return builder; // Supports chaining syntax
     }
 
