@@ -1,0 +1,31 @@
+@* Top-level directives may come after Razor comments *@
+@directive one
+
+@* Top-level directives may come after blank lines *@
+
+@directive two
+
+@* Top-level directives may be preceded by a comment on the same line *@ @yada three
+
+@* Directives may follow whitespace on the same line *@
+    @hello four
+
+  @test @* Directives may be interrupted by a comment *@ five
+ 
+@more @* Directives may
+even be interrupted by
+a multi-line comment *@ six
+
+    @crazy <!-- --> @* Directives may be interrupted by a blank HTML comment *@ seven
+
+   <!-- 
+       -->  @final @* Some
+       funny
+       stuff *@ and <!--
+
+       --> eight
+
+<!-- But once any content, even an HTML comment with content, shows up, directives are over. -->
+
+@simple should not be parsed
+

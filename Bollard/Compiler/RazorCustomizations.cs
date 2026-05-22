@@ -4,12 +4,15 @@ using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.AspNetCore.Razor.Language.CodeGeneration;
 using Microsoft.AspNetCore.Razor.Language.Intermediate;
+using Microsoft.AspNetCore.Razor.Language.Extensions;
 using static System.Net.Mime.MediaTypeNames;
 using static Bollard.RazorCustomizations;
+using System.Diagnostics.Tracing;
 
 /* RazorProjectEngine phases and passes determined to date
  *   DefaultRazorParsingPhase
@@ -81,8 +84,16 @@ internal class RazorCustomizations {
         public RazorEngine? Engine { get; set; }
 
         public void Execute(RazorCodeDocument codeDocument) {
-            Console.WriteLine("*** PreProcessPhase ***");
-
+            Console.WriteLine($"*** PreProcessPhase: {codeDocument?.Source?.RelativePath} ***");
+            var source = codeDocument?.Source;
+            if (source is null) {
+                Console.WriteLine("=== Source is null");
+                return;
+            }
+            var reader = new RazorDirectiveExtractor(source);
+            while (reader.ReadNext()) {
+                Console.WriteLine($"  {reader.CurrentName} {reader.CurrentValue}");
+            }
         }
     }
 
