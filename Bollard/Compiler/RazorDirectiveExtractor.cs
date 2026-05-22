@@ -56,7 +56,6 @@ internal class RazorDirectiveExtractor {
             var newBuf = new char[len + lineLen];
             Array.Copy(_buf, newBuf, len);
             _buf = newBuf;
-            Console.WriteLine("grow buffer");
         }
 
         _source.CopyTo(_offset, _buf, len, lineLen);
