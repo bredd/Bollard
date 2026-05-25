@@ -232,4 +232,122 @@ internal class RazorDirectiveExtractor {
     public string CurrentName => _currentName;
     public string CurrentValue => _currentValue;
 
+
+#if DEBUG
+    public static bool SelfTest(TextWriter writer) {
+        writer.WriteLine("RazorDirectiveExtractor Self-Test:");
+        if (!OneSelfTest(writer, c_selfTest1, c_selfTest1Expected))
+            return false;
+        if (!OneSelfTest(writer, c_selfTest2, c_selfTest2Expected))
+            return false;
+        if (!OneSelfTest(writer, c_selfTest3, c_selfTest3Expected))
+            return false;
+        writer.WriteLine("  Tests passed.");
+        return true;
+    }
+
+    private static bool OneSelfTest(TextWriter writer, string source, KeyValuePair<string, string>[] expected) {
+        var doc = RazorSourceDocument.Create(source, "selfTest.txt");
+        var extractor = new RazorDirectiveExtractor(doc);
+        extractor._buf = new char[2]; // Force reallocations to test buffer management.
+        int i = 0;
+        while (extractor.ReadNext()) {
+            if (i >= expected.Length) {
+                writer.WriteLine("  More reads than expected.");
+                return false;
+            }
+            if (!string.Equals(extractor.CurrentName, expected[i].Key)) {
+                writer.WriteLine($"  Name mismatch: expected='{expected[i].Key}' found='{extractor.CurrentName}'.");
+                return false;
+            }
+            if (!string.Equals(extractor.CurrentValue, expected[i].Value)) {
+                writer.WriteLine($"  Value mismatch: expected='{expected[i].Value}' found='{extractor.CurrentValue}'.");
+                return false;
+            }
+            ++i;
+        }
+        if (i < expected.Length) {
+            writer.WriteLine("  Fewer reads than expected.");
+            return false;
+        }
+        return true;
+    }
+
+    static string c_selfTest1 =
+@"@* Top-level directives may come after Razor comments *@
+@directive one
+
+@* Top-level directives may come after blank lines *@
+
+@directive two
+
+@* Top-level directives may be preceded by a comment on the same line *@ @yada three
+
+@* Directives may follow whitespace on the same line *@
+    @hello four
+
+  @test @* Directives may be interrupted by a comment *@ five
+ 
+@more @* Directives may
+even be interrupted by
+a multi-line comment *@ six
+
+    @crazy <!-- --> @* Directives may be interrupted by a blank HTML comment *@ seven
+
+   <!-- 
+       -->  @final @* Some
+       funny
+       stuff *@ and <!--
+
+       --> eight
+
+<!-- But once any content, even an HTML comment with content, shows up, directives are over. -->
+
+@post should not be parsed
+";
+
+    static readonly KeyValuePair<string, string>[] c_selfTest1Expected = new KeyValuePair<string, string>[] {
+        new("@directive", "one"),
+        new("@directive", "two"),
+        new("@yada", "three"),
+        new("@hello", "four"),
+        new("@test", "five"),
+        new("@more", "six"),
+        new("@crazy", "seven"),
+        new("@final", "and eight")
+    };
+
+    static string c_selfTest2 =
+@"@Dir begin
+@hEllo two
+@almost2 three
+@* Directives must only be composed of letters so the third one will end directive parsing *@
+@post will not show
+And more
+";
+
+    static readonly KeyValuePair<string, string>[] c_selfTest2Expected = new KeyValuePair<string, string>[] {
+        new("@Dir", "begin"),
+        new("@hEllo", "two")
+    };
+
+    static string c_selfTest3 =
+@"@* Conventional - what you would expect *@
+@page ""phred.html""
+@inherits SuperClass
+@using CodeBit
+<html>
+</html>
+@post will not show
+";
+
+    static readonly KeyValuePair<string, string>[] c_selfTest3Expected = new KeyValuePair<string, string>[] {
+        new("@page", "\"phred.html\""),
+        new("@inherits", "SuperClass"),
+        new("@using", "CodeBit")
+    };
+
+
+#endif // DEBUG
+
 }

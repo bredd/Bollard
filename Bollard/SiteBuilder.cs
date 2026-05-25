@@ -246,7 +246,7 @@ internal class SiteBuilder {
       
     public void Run() {
         if (_assembly is null)
-            throw new InvalidOperationException("No assembly to run.");
+             throw new InvalidOperationException("No assembly to run.");
 
         var stopwatch = new Stopwatch();
         stopwatch.Start();
