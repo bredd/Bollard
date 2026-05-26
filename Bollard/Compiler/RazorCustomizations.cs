@@ -128,82 +128,6 @@ internal class RazorCustomizations {
         }
     }
 
-    private class TextOnlyParsingPhase : IRazorEnginePhase {
-        public static void Attach(RazorProjectEngineBuilder builder) {
-            for (int i = 0; i < builder.Phases.Count; i++) {
-                if (builder.Phases[i] is TextOnlyParsingPhase) {
-                    builder.Phases.Remove(builder.Phases[i]);
-                    builder.Phases.Add(new TextOnlyParsingPhase());
-                }
-            }
-            builder.Phases.Insert(1, new PreProcessPhase());
-        }
-
-        public RazorEngine? Engine { get; set; }
-
-        public void Execute(RazorCodeDocument codeDocument) {
-            var options = RazorParserOptions.Create(builder => {
-                builder.Directives.Clear(); // Optional according to AI which has made a lot of errors so far
-            });
-
-            var syntaxTree = RazorSyntaxTree.Parse(codeDocument.Source, options);
-
-            codeDocument.SetSyntaxTree(syntaxTree);
-        }
-
-    }
-
-    private class CustomDocumentClassifierPass : IRazorDocumentClassifierPass {
-        public int Order => 500; // Run before the default pass
-
-        public RazorEngine? Engine { get; set; }
-
-        public void Execute(RazorCodeDocument codeDocument, DocumentIntermediateNode documentNode) {
-            if (codeDocument.GetFileKind() != c_docTypeGeneric)
-                return; // Only handle our custom class
-
-            documentNode.DocumentKind = c_docTypeGeneric;
-
-            // Set code generation options
-            var codeGenOptions = RazorCodeGenerationOptions.CreateDefault();
-            documentNode.Target = CodeTarget.CreateDefault(codeDocument, codeGenOptions);
-
-            // Build the IR structure (namespace → class → method)
-            var ns = new NamespaceDeclarationIntermediateNode {
-                Content = "GeneratedTemplates"
-            };
-
-            var cls = new ClassDeclarationIntermediateNode {
-                ClassName = "Template_" + Guid.NewGuid().ToString("N"),
-                Modifiers = { "public" }
-            };
-
-            var method = new MethodDeclarationIntermediateNode {
-                MethodName = "ExecuteAsync",
-                Modifiers = { "public", "async" },
-                ReturnType = "System.Threading.Tasks.Task"
-            };
-
-            // Attach nodes
-            documentNode.Children.Add(ns);
-            ns.Children.Add(cls);
-            cls.Children.Add(method);
-        }
-
-    }
-
-    /*
-    private class CustomDocumentClassifierPass : DocumentClassifierPassBase {
-        public override int Order => DefaultFeatureOrder - 100; // Run before the default pass
-
-        protected override bool IsMatch(RazorCodeDocument codeDocument, DocumentIntermediateNode documentNode) {
-            return codeDocument.GetFileKind() == c_docTypeGeneric;
-        }
-
-        protected override string DocumentKind => c_docTypeGeneric;
-    }
-    */
-
     private class CustomClassNamePass : IRazorDocumentClassifierPass {
         public int Order => 1001; // Run after built-in passes
 
@@ -362,7 +286,7 @@ internal class RazorCustomizations {
 #endif // DEBUG
 
     public static RazorProjectEngineBuilder AddToRazorProject(RazorProjectEngineBuilder builder) {
-        //PreProcessPhase.Attach(builder);
+        PreProcessPhase.Attach(builder);
 
         // Adding directives registers them but they must be processed in the later passes or phases.
         builder.AddDirective(c_pageDirective);
@@ -371,7 +295,6 @@ internal class RazorCustomizations {
 
         // Custom passes are called within phases
         builder.Features.Add(new CustomClassNamePass());
-        //builder.Features.Add(new CustomDocumentClassifierPass());
         builder.Features.Add(new CustomDirectivesPass());
 
         //TracePhase.Attach(builder);

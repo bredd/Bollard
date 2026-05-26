@@ -4,10 +4,30 @@
 @asset "NotHtml.txt"
 @{
     string wouldNeedEncoding = "'\"'";
+    string something = "something";
+    string name = "Phred";
+    string one = "1";
+    string two = "2";
+    string three = "3";
 }
-<html>
-<body>
-   <p attr="@wouldNeedEncoding">Something</p>
-</body>
-</html>
 
+This is not HTML.
+
+But this looks like an HTML tag that would get special processing if this were HTML
+<p class="@something">
+
+This also looks like an html tag but is not. The attribute value should not be encoded.
+<div attr="@wouldNeedEncoding">Something</p>
+
+And here is something that might be interpreted as a tag but it might actually source code
+if x <p q="@one"
+
+And since it is left dangling then an HTML reader might treat it as if all of this
+sentence is still part of the tag.
+
+Name = @name
+
+Just to keep things interesting. Here is a syntax-correct HTML element but in quotes
+as if some program were running.
+"<strong>Some strong text</strong>"
+<strong r="@name">Some strong text</strong>
