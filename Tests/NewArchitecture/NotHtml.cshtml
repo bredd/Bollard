@@ -1,0 +1,13 @@
+@* Despite being a .cshtml extension and having HTML content, we use the @asset
+   directive to select the default parser and not HtmlEncode content. That would
+   be a bad idea in actual practice but this is for testing. *@
+@asset "NotHtml.txt"
+@{
+    string wouldNeedEncoding = "'\"'";
+}
+<html>
+<body>
+   <p attr="@wouldNeedEncoding">Something</p>
+</body>
+</html>
+

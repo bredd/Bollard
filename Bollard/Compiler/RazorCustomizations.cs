@@ -39,14 +39,27 @@ namespace Bollard;
 internal class RazorCustomizations {
 
     const string c_pageDirectiveName = "page";
+    const string c_assetDirectiveName = "asset";
     const string c_layoutDirectiveName = "layout";
-    const string c_defaultBaseClass = "Bollard.HtmlTemplate";
+    const string c_baseClassHtml = "Bollard.HtmlTemplate";
+    const string c_baseClassGeneric = "Bollard.RazorTemplate";
+    const string c_docTypeHtml = "mvc";        // Equivalent to FileKinds.Legacy
+    const string c_docTypeGeneric = "generic"; // No HTML Processing
 
     static readonly char[] c_directorySeparatorChars = { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
 
     // The descriptor tells the parser what this is.
     private static readonly DirectiveDescriptor c_pageDirective =
         DirectiveDescriptor.CreateSingleLineDirective(c_pageDirectiveName,
+            builder => {
+                // Name and description arguments are just for diagnostic feedback to the user. They don't affect operation
+                builder.AddOptionalStringToken("path", "Site path to output destination.");
+                builder.Usage = DirectiveUsage.FileScopedSinglyOccurring; // Modifies the prior setting.
+            });
+
+    // The descriptor tells the parser what this is.
+    private static readonly DirectiveDescriptor c_assetDirective =
+        DirectiveDescriptor.CreateSingleLineDirective(c_assetDirectiveName,
             builder => {
                 // Name and description arguments are just for diagnostic feedback to the user. They don't affect operation
                 builder.AddOptionalStringToken("path", "Site path to output destination.");
@@ -77,6 +90,7 @@ internal class RazorCustomizations {
     }
 
     private class PreProcessPhase : IRazorEnginePhase {
+
         public static void Attach(RazorProjectEngineBuilder builder) {
             builder.Phases.Insert(1, new PreProcessPhase());
         }
@@ -87,15 +101,108 @@ internal class RazorCustomizations {
             Console.WriteLine($"*** PreProcessPhase: {codeDocument?.Source?.RelativePath} ***");
             var source = codeDocument?.Source;
             if (source is null) {
-                Console.WriteLine("=== Source is null");
+#if DEBUG
+                Console.WriteLine("Unexpected null RazorCodeDocument.Source.");
+#endif
                 return;
             }
             var reader = new RazorDirectiveExtractor(source);
+
+            // At this stage, all we are looking for is either an @page directive indicating HTML parsing or an @asset directive indicating plain parsing
+            bool htmlParser = false;
+            var filePath = source.RelativePath ?? source.FilePath;
+
+            if (string.Equals(Path.GetExtension(filePath), ".cshtml", StringComparison.OrdinalIgnoreCase))
+                htmlParser = true;
+
+            // If both directives are present, take the last one
             while (reader.ReadNext()) {
-                Console.WriteLine($"  {reader.CurrentName} {reader.CurrentValue}");
+                if (reader.CurrentName == "@page")
+                    htmlParser = true;
+                else if (reader.CurrentName == "@asset")
+                    htmlParser = false;
             }
+
+            // Set the parser type
+            codeDocument.SetFileKind(htmlParser ? c_docTypeHtml : c_docTypeGeneric);
         }
     }
+
+    private class TextOnlyParsingPhase : IRazorEnginePhase {
+        public static void Attach(RazorProjectEngineBuilder builder) {
+            for (int i = 0; i < builder.Phases.Count; i++) {
+                if (builder.Phases[i] is TextOnlyParsingPhase) {
+                    builder.Phases.Remove(builder.Phases[i]);
+                    builder.Phases.Add(new TextOnlyParsingPhase());
+                }
+            }
+            builder.Phases.Insert(1, new PreProcessPhase());
+        }
+
+        public RazorEngine? Engine { get; set; }
+
+        public void Execute(RazorCodeDocument codeDocument) {
+            var options = RazorParserOptions.Create(builder => {
+                builder.Directives.Clear(); // Optional according to AI which has made a lot of errors so far
+            });
+
+            var syntaxTree = RazorSyntaxTree.Parse(codeDocument.Source, options);
+
+            codeDocument.SetSyntaxTree(syntaxTree);
+        }
+
+    }
+
+    private class CustomDocumentClassifierPass : IRazorDocumentClassifierPass {
+        public int Order => 500; // Run before the default pass
+
+        public RazorEngine? Engine { get; set; }
+
+        public void Execute(RazorCodeDocument codeDocument, DocumentIntermediateNode documentNode) {
+            if (codeDocument.GetFileKind() != c_docTypeGeneric)
+                return; // Only handle our custom class
+
+            documentNode.DocumentKind = c_docTypeGeneric;
+
+            // Set code generation options
+            var codeGenOptions = RazorCodeGenerationOptions.CreateDefault();
+            documentNode.Target = CodeTarget.CreateDefault(codeDocument, codeGenOptions);
+
+            // Build the IR structure (namespace → class → method)
+            var ns = new NamespaceDeclarationIntermediateNode {
+                Content = "GeneratedTemplates"
+            };
+
+            var cls = new ClassDeclarationIntermediateNode {
+                ClassName = "Template_" + Guid.NewGuid().ToString("N"),
+                Modifiers = { "public" }
+            };
+
+            var method = new MethodDeclarationIntermediateNode {
+                MethodName = "ExecuteAsync",
+                Modifiers = { "public", "async" },
+                ReturnType = "System.Threading.Tasks.Task"
+            };
+
+            // Attach nodes
+            documentNode.Children.Add(ns);
+            ns.Children.Add(cls);
+            cls.Children.Add(method);
+        }
+
+    }
+
+    /*
+    private class CustomDocumentClassifierPass : DocumentClassifierPassBase {
+        public override int Order => DefaultFeatureOrder - 100; // Run before the default pass
+
+        protected override bool IsMatch(RazorCodeDocument codeDocument, DocumentIntermediateNode documentNode) {
+            return codeDocument.GetFileKind() == c_docTypeGeneric;
+        }
+
+        protected override string DocumentKind => c_docTypeGeneric;
+    }
+    */
 
     private class CustomClassNamePass : IRazorDocumentClassifierPass {
         public int Order => 1001; // Run after built-in passes
@@ -103,6 +210,9 @@ internal class RazorCustomizations {
         public RazorEngine? Engine { get; set; }
 
         public void Execute(RazorCodeDocument codeDocument, DocumentIntermediateNode documentNode) {
+            Console.WriteLine($"  *** documentNode.DocumentKind = {documentNode.DocumentKind}");
+            documentNode.DocumentKind = codeDocument.GetFileKind();
+
             var classNode = documentNode.FindPrimaryClass();
             var namespaceNode = documentNode.FindPrimaryNamespace();
             Debug.Assert(classNode is not null && namespaceNode is not null);
@@ -112,7 +222,7 @@ internal class RazorCustomizations {
 
             // Customize the class name
             classNode.ClassName = PathTool.SanitizeToCSharpName(Path.GetFileNameWithoutExtension(filePath));
-            classNode.BaseType = c_defaultBaseClass;
+            classNode.BaseType =  string.Equals(codeDocument.GetFileKind(), c_docTypeHtml) ? c_baseClassHtml : c_baseClassGeneric;
             string ns;
             if (codeDocument.TryComputeNamespace(true, out ns)) {
                 namespaceNode.Content = ns;
@@ -194,6 +304,7 @@ internal class RazorCustomizations {
 
         public void Execute(RazorCodeDocument codeDocument) {
             Console.WriteLine("TestPhase: " + _label);
+            //DumpRecursive(1, codeDocument.GetSyntaxTree().Root)
             DumpRecursive(1, codeDocument.GetDocumentIntermediateNode());
 
             if (Engine is not null) {
@@ -251,14 +362,16 @@ internal class RazorCustomizations {
 #endif // DEBUG
 
     public static RazorProjectEngineBuilder AddToRazorProject(RazorProjectEngineBuilder builder) {
-        PreProcessPhase.Attach(builder);
+        //PreProcessPhase.Attach(builder);
 
         // Adding directives registers them but they must be processed in the later passes or phases.
         builder.AddDirective(c_pageDirective);
+        builder.AddDirective(c_assetDirective);
         builder.AddDirective(c_layoutDirective);
 
         // Custom passes are called within phases
         builder.Features.Add(new CustomClassNamePass());
+        //builder.Features.Add(new CustomDocumentClassifierPass());
         builder.Features.Add(new CustomDirectivesPass());
 
         //TracePhase.Attach(builder);
