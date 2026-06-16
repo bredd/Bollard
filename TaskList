@@ -1,0 +1,28 @@
+## Tasks
+
+### Finishing the basic compilation and output
+
+* ✅Need to detect
+    * Base class
+    * ParseHtml option (whether to give special treatment to Tags and Attributes)
+    * Whether code should be registered to "run" by default or just made available
+    * These are controlled by the @assset and @baseclass directives and also by the filename extension.
+    * Look ahead, since directives control this stuff, they can be influenced by _ViewImports.cshtml
+    * Look ahead, .md may be processed either within or outside the Razor pipeline.
+
+* ✅Set FileKind in the preprocessor step
+* ✅Set baseclass according to FileKind (unless overridden by @inherits)
+* Register files to run
+    * Set output filename from default, @page, or @asset and include in the arguments for running.
+    * Allow code to change the output filename.
+    * When running, output to the correct path.
+* Support MarkDown (using Markdig)
+* Support collections
+    * Figure out how to manage metadata / models since that comes after each item is generated. Need to prevent or detect circular dependencies.
+    * (Jekyll has it easier because metadata is static)
+* Add compatible features like _ViewStart and _ViewImports
+
+
+
+## Emoji
+✅❌↘️🔄◓◐**∂**🟢🟡

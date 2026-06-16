@@ -68,53 +68,13 @@ Compiling a file simply includes the class in the compiled assembly. To be run, 
 
 **Important**: Regardless of the value that appears in the directive, Razor code can set `Path` to a new value which will override any prior setting.
 
-## Implementation Notes
-
-### Finishing the basic compilation and output
-
-* Need to detect
-    * Base class
-    * ParseHtml option (whether to give special treatment to Tags and Attributes)
-    * Whether code should be registered to "run" by default or just made available
-    * These are controlled by the @assset and @baseclass directives and also by the filename extension.
-    * Look ahead, since directives control this stuff, they can be influenced by _ViewImports.cshtml
-    * Look ahead, .md may be processed either within or outside the Razor pipeline.
-
-* Need to set the RazorCodeDocument.RazorParserOptions.ParseHtml before the parsing phase.
-    * RazorCodeDocument.RazorParserOptions.ParseHtml set to true or false depending on whether HTML tags and attributes should be processed.
-    * Phases are (per CoPilot)
-        * IRazorProjectItemClassifierPhase
-        * IRazorParserOptionsPhase (finalizes parser options)
-        * IRazorSyntaxTreePhase (actually does the parsing)
-        * IR Passes
-        * C# lowering
-        * Code Generation
-    * Therefore: Register a feature that implements IRazorParserOptionsFeature
-        * (Could also create a custom phase but the feature is cleaner.)
-        * Override GetOptions(RazorCodeDocument document)
-        ```
-        var builder = new RazorParserOptionsBuilder();
-        builder.ParseHtml = true/false;
-        return builder.Build();
-        ```
-    * Passing custom data to later passes and phases
-        * Create a custom class and store it in RazorCodeDocument.Items with a custom key.
-        * Retrieve the class later to get the needed info.
-        * (Alternative is to subclass RazorParserOptions and add custom information)
-    * It can set the FileKind to influence later phases
-        * File Kinds are simply strings so you can define your own values.
-        * FileKinds.Legacy - for classic Razor Pages
-        * DocumentClassifier reads the file kind and changes settings accordingly - but this is done too late to change the parser mode.
-
-
-
 ### Layouts
 
 More to come here.
 
-### Future compatibility enhancements
+## Future compatibility enhancements
 
-#### _ViewImports.cshtml 
+### _ViewImports.cshtml 
 * Documented here: https://www.learnrazorpages.com/razor-pages/files/viewimports
     * Should strictly be directives.
     * @using, @addTagHelper, @removeTagHelper, @inject are additive
@@ -140,7 +100,7 @@ More to come here.
         * Injects their directives into the page's import phase
         * Ignores or errors on things other than directives (This is how directives only are imported)
 
-#### _ViewStart.cshtml
+### _ViewStart.cshtml
 * Documented here: https://www.learnrazorpages.com/razor-pages/files/viewstart
     * Typically composed of a single code block.
     * Typically used to set the layout
@@ -163,12 +123,12 @@ More to come here.
         * If the filename is "_ViewStart.cshtml" then it calls codeDocument.SetFileKind(RazorFileKinds.ViewStart)
         * Tells the parser that it should just have one code block
 
-#### @section directive
+### @section directive
 * Lets you produce sections that a layout will insert in the right places.
 * Requires extensions to the Razor engine
 * Like _ViewImports and _ViewStart, implemented by builder.AddMvcRazorExtensions();
 
-#### Tag Helpers
+### Tag Helpers
 * https://www.learnrazorpages.com/razor-pages/tag-helpers
 
 
